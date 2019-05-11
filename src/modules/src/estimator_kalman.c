@@ -74,6 +74,77 @@
 
 // #define KALMAN_USE_BARO_UPDATE
 
+/**
+ * Additional data structures and functions to accomplish timing experiment
+ */
+static float acc_thr = 0.5;
+static bool meas_on = false;
+static bool got_extp = false;
+
+static uint64_t time_s; // Starting time
+
+static positionMeasurement_t pos_s; // Starting position
+static positionMeasurement_t pos_c; // Current position
+
+static bool check_sens_thr(const sensorData_t* s, float thr) {
+        
+        if ((s->acc.x > thr) | (s->acc.x < -thr))
+                return true;
+        if ((s->acc.y > thr) | (s->acc.y < -thr))
+                return true;
+        if ((s->acc.z > thr) | (s->acc.z < -thr))
+                return true;
+
+        return false;
+}
+
+static void update_currpos(positionMeasurement_t p) {
+	pos_c = p;
+	
+	if (!got_extp)
+		got_extp = true;
+
+	return;
+}
+
+static void start_meas(const sensorData_t *s, positionMeasurement_t p) {
+	if (got_extp) {
+		meas_on = true;
+		time_s = s->interruptTimestamp; // Starting time
+		pos_s = p;
+	}
+	return;
+}
+
+static bool check_stopcond(positionMeasurement_t p_m) {
+	float dx;
+	float dy;
+	if (meas_on) {
+		// Evaluate the distance from the start
+		// point
+		dx = p_m.x - pos_s.x;
+		dy = p_m.y - pos_s.y;
+		if ((dx*dx + dy*dy) > (float)0.0001) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static uint64_t stop_meas() {
+	uint64_t delta;
+	uint64_t time_stop = usecTimestamp(); 
+
+	delta = time_stop - time_s;
+	meas_on = false;
+
+	return delta;	
+}
+
+
+
+
+
 
 /**
  * Additionally, the filter supports the incorporation of additional sensors into the state estimate
@@ -227,6 +298,10 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
 #ifdef KALMAN_DECOUPLE_XY
   kalmanCoreDecoupleXY(this);
 #endif
+
+
+  if (check_sens_thr(sensors,acc_thr))
+    start_meas(sensors, pos_c);
 
   // Average the last IMU measurements. We do this because the prediction loop is
   // slower than the IMU loop, but the IMU information is required externally at
@@ -484,6 +559,9 @@ bool estimatorKalmanEnqueueTDOA(const tdoaMeasurement_t *uwb)
 bool estimatorKalmanEnqueuePosition(const positionMeasurement_t *pos)
 {
   ASSERT(isInit);
+  update_currpos(*pos);
+  if (check_stopcond(*pos))
+          stop_meas();
   return stateEstimatorEnqueueExternalMeasurement(posDataQueue, (void *)pos);
 }
 
