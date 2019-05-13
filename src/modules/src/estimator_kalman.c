@@ -77,23 +77,30 @@
 /**
  * Additional data structures and functions to accomplish timing experiment
  */
+
+static uint64_t t_measurements[32];
+
 static float acc_thr = 0.5;
 static bool meas_on = false;
 static bool got_extp = false;
+static bool trigger_on = false;
 
 static uint64_t time_s; // Starting time
 
 static positionMeasurement_t pos_s; // Starting position
 static positionMeasurement_t pos_c; // Current position
 
+
 static bool check_sens_thr(const sensorData_t* s, float thr) {
-        
+
         if ((s->acc.x > thr) | (s->acc.x < -thr))
                 return true;
         if ((s->acc.y > thr) | (s->acc.y < -thr))
                 return true;
         if ((s->acc.z > thr) | (s->acc.z < -thr))
                 return true;
+
+        trigger_on = true;
 
         return false;
 }
@@ -108,8 +115,9 @@ static void update_currpos(positionMeasurement_t p) {
 }
 
 static void start_meas(const sensorData_t *s, positionMeasurement_t p) {
-	if (got_extp) {
+	if (got_extp && !meas_on && trigger_on) {
 		meas_on = true;
+    trigger_on = false;
 		time_s = s->interruptTimestamp; // Starting time
 		pos_s = p;
 	}
