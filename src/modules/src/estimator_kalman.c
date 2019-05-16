@@ -73,23 +73,27 @@
 
 
 // #define KALMAN_USE_BARO_UPDATE
+#define DEBUG_TIME
 
 /**
  * Additional data structures and functions to accomplish timing experiment
  */
 
-static uint64_t t_measurements[32];
 
+#ifdef DEBUG_TIME
 static float acc_thr = 0.5;
-static bool meas_on = false;
-static bool got_extp = false;
-static bool trigger_on = false;
+volatile static bool meas_on = false;
+volatile static bool got_extp = false;
+volatile static bool trigger_on = false;
 
-static uint64_t time_s; // Starting time
+static uint64_t time_s =0; // Starting time
+static uint64_t time_diff = 0; // Evaluated latency
+
+static uint32_t time_diff_h = 0;
+static uint32_t time_diff_l = 0;
 
 static positionMeasurement_t pos_s; // Starting position
 static positionMeasurement_t pos_c; // Current position
-
 
 static bool check_sens_thr(const sensorData_t* s, float thr) {
 
@@ -100,6 +104,7 @@ static bool check_sens_thr(const sensorData_t* s, float thr) {
         if ((s->acc.z > thr) | (s->acc.z < -thr))
                 return true;
 
+        // If at rest, enable the trigger
         trigger_on = true;
 
         return false;
@@ -132,7 +137,7 @@ static bool check_stopcond(positionMeasurement_t p_m) {
 		// point
 		dx = p_m.x - pos_s.x;
 		dy = p_m.y - pos_s.y;
-		if ((dx*dx + dy*dy) > (float)0.0001) {
+		if ((dx*dx + dy*dy) > (float)0.00001) {
 			return true;
 		}
 	}
@@ -140,16 +145,26 @@ static bool check_stopcond(positionMeasurement_t p_m) {
 }
 
 static uint64_t stop_meas() {
-	uint64_t delta;
 	uint64_t time_stop = usecTimestamp(); 
 
-	delta = time_stop - time_s;
+	time_diff = time_stop - time_s;
+
+  time_diff_l = (0x00000000FFFFFFFF & time_diff);
+  time_diff_h = (0xFFFFFFFF00000000 & time_diff) >> 32;
+
 	meas_on = false;
 
-	return delta;	
+	return time_stop;	
 }
 
 
+#endif
+
+// Variables for comparing altitude data
+static uint32_t time_zrange;
+static uint32_t time_opti;
+static float value_zrange;
+static float value_opti;
 
 
 
@@ -307,10 +322,10 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
   kalmanCoreDecoupleXY(this);
 #endif
 
-
+#ifdef DEBUG_TIME
   if (check_sens_thr(sensors,acc_thr))
     start_meas(sensors, pos_c);
-
+#endif
   // Average the last IMU measurements. We do this because the prediction loop is
   // slower than the IMU loop, but the IMU information is required externally at
   // a higher rate (for body rate control).
@@ -427,6 +442,8 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
   tofMeasurement_t tof;
   while (stateEstimatorHasTOFPacket(&tof))
   {
+    time_zrange = xTaskGetTickCount();
+    value_zrange = tof.distance;
     kalmanCoreUpdateWithTof(&coreData, &tof);
     doneUpdate = true;
   }
@@ -448,6 +465,8 @@ void estimatorKalman(state_t *state, sensorData_t *sensors, control_t *control, 
   positionMeasurement_t pos;
   while (stateEstimatorHasPositionMeasurement(&pos))
   {
+    time_opti = xTaskGetTickCount();
+    value_opti = pos.z;
     kalmanCoreUpdateWithPosition(&coreData, &pos);
     doneUpdate = true;
   }
@@ -567,9 +586,11 @@ bool estimatorKalmanEnqueueTDOA(const tdoaMeasurement_t *uwb)
 bool estimatorKalmanEnqueuePosition(const positionMeasurement_t *pos)
 {
   ASSERT(isInit);
+#ifdef DEBUG_TIME
   update_currpos(*pos);
   if (check_stopcond(*pos))
           stop_meas();
+#endif
   return stateEstimatorEnqueueExternalMeasurement(posDataQueue, (void *)pos);
 }
 
@@ -610,6 +631,20 @@ void estimatorKalmanGetEstimatedPos(point_t* pos) {
   pos->y = coreData.S[KC_STATE_Y];
   pos->z = coreData.S[KC_STATE_Z];
 }
+
+#ifdef DEBUG_TIME
+LOG_GROUP_START(Timing_ExtPos)
+  LOG_ADD(LOG_UINT32, dt_low, &time_diff_l)
+  LOG_ADD(LOG_UINT32, dt_high, &time_diff_h)
+LOG_GROUP_STOP(Timing_ExtPos)
+#endif
+
+LOG_GROUP_START(Z_measurements)
+  LOG_ADD(LOG_UINT32, time_zrange, &time_zrange)
+  LOG_ADD(LOG_FLOAT, z_zrange, &value_zrange)
+  LOG_ADD(LOG_UINT32, time_opti, &time_opti)
+  LOG_ADD(LOG_FLOAT, z_opti, &value_opti)
+LOG_GROUP_STOP(Z_measurements)
 
 // Temporary development groups
 LOG_GROUP_START(kalman_states)
