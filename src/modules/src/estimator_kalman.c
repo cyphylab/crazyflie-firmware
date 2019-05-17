@@ -73,7 +73,7 @@
 
 
 // #define KALMAN_USE_BARO_UPDATE
-#define DEBUG_TIME
+//#define DEBUG_TIME
 
 /**
  * Additional data structures and functions to accomplish timing experiment
@@ -156,7 +156,6 @@ static uint64_t stop_meas() {
 
 	return time_stop;	
 }
-
 
 #endif
 
@@ -640,13 +639,14 @@ LOG_GROUP_STOP(Timing_ExtPos)
 #endif
 
 LOG_GROUP_START(Z_measurements)
-  LOG_ADD(LOG_UINT32, time_zrange, &time_zrange)
-  LOG_ADD(LOG_FLOAT, z_zrange, &value_zrange)
-  LOG_ADD(LOG_UINT32, time_opti, &time_opti)
-  LOG_ADD(LOG_FLOAT, z_opti, &value_opti)
+  LOG_ADD(LOG_UINT32, time_r, &time_zrange)
+  LOG_ADD(LOG_FLOAT, z_r, &value_zrange)
+  LOG_ADD(LOG_UINT32, time_o, &time_opti)
+  LOG_ADD(LOG_FLOAT, z_o, &value_opti)
 LOG_GROUP_STOP(Z_measurements)
 
 // Temporary development groups
+
 LOG_GROUP_START(kalman_states)
   LOG_ADD(LOG_FLOAT, ox, &coreData.S[KC_STATE_X])
   LOG_ADD(LOG_FLOAT, oy, &coreData.S[KC_STATE_Y])
