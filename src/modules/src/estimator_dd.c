@@ -18,7 +18,7 @@
 
 #define STATE_SIZE (3)
 #define BUFF_SIZE (5)
-#define TS (0.003f)
+#define TS (0.010f)
 #define TS2 ((TS) * (TS))
 
 
