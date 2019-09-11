@@ -15,7 +15,13 @@ void estimatorDD(state_t* state, sensorData_t* sensors, control_t* control, cons
 bool estimatorDDNewMeasurement(const positionMeasurement_t *pos);
 
 // Get the estimated value
-double estimatorDDGetEstimatedZ();
+float estimatorDDGetEstimatedZ();
+
+// Get the control computed by the DD
+float estimatorDDGetControl();
+
+
+void estimatorDDSetControl(const float v);
 
 // Check whether the estimator has a finished the estimation cycle
 bool estimatorDDHasNewEstimate();

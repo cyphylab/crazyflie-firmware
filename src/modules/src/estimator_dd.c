@@ -18,8 +18,11 @@
 
 #define STATE_SIZE (3)
 #define BUFF_SIZE (5)
-#define TS (0.003)
+#define TS (0.003f)
 #define TS2 ((TS) * (TS))
+
+
+#define  droneMass (0.032f);
 
 // ===================================
 // MEMORY BUFFERS 
@@ -27,7 +30,7 @@
 // A matrix
 float A[STATE_SIZE * STATE_SIZE] = 
 {
-	1.0,	-(TS), (0.5 * TS * TS),
+	1.0,	-(TS), (0.5f * TS * TS),
 	0.0,	1.0, -(TS),
 	0.0, 	0.0,	1.0,
 };
@@ -52,7 +55,7 @@ float O_inv[STATE_SIZE * BUFF_SIZE];
 // Measurement Buffer
 static float Ybuff[BUFF_SIZE];
 static float X[STATE_SIZE];
-
+static float X_old[3];
 
 // Temp Buffers for the evaluation of the pseudoinverse
 float TempNyNx[BUFF_SIZE * STATE_SIZE];
@@ -65,6 +68,8 @@ float TempNxNx2[STATE_SIZE * STATE_SIZE];
 
 // ====================================	
 //
+
+
 static bool isInit = false;
 static xSemaphoreHandle mutex;
 
@@ -74,15 +79,24 @@ static uint64_t timestamp_old;
 //static uint64_t timestamp_ctrl;
 
 float dt_ms;
-double dt_ms_cum = 0;
+float dt_ms_cum = 0;
 static uint32_t msg_counter = 0;
 
 // ====================================
 // Estimator State 
-static double state_z;
-//static float ctrl_dd;
+static float state_z;
+static float alpha;
+static float beta;
 
-static uint8_t counter = 0;
+// Estimator Parametrs
+static float gamma1 = 3.0f;
+
+// Control gain
+static float L = 900;
+static float Kdd[3];
+static float ctrl_dd;
+static float Tracking[] = {0.0, 0.0, 0.0};
+
 static bool updated = false;
 
 // ====================================
@@ -110,9 +124,59 @@ void init_pseudoinv(arm_matrix_instance_f32* Pseudo) {
 }
 
 
+
+
 // ===================================
 // Estimator methods
 
+// Set the flag
+void set_estimator_ready() {
+	xSemaphoreTake(mutex, portMAX_DELAY);
+	updated = true;
+	xSemaphoreGive(mutex);
+	
+	return;
+}
+
+/**
+ * Estimate state
+ */
+static void estimate_state() {
+	// Save the old state before the update
+	for (int i = 0; i < 3; i++) {
+		X_old[i] = X[i];
+	}
+
+	arm_mat_mult_f32(&O_invm, &Ybuffm, &Xm);
+	return;
+}
+
+
+/**
+ * Estimate params
+ */
+static void estimate_params() {
+	beta = 1.0f / droneMass;
+	alpha = alpha - gamma1 * TS * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
+	return;
+}
+
+
+/**
+ * Compute control value
+ */
+static void compute_ctrl() {
+	int i;
+	float u_fb = 0;
+	for (i = 0; i < 3; i++) {
+		u_fb += Kdd[i] * (X[i] - Tracking[i]);
+	}
+	ctrl_dd = (1.0f / beta) * (-alpha + u_fb);
+}
+
+/**
+ * Estimator step function
+ */
 void DDEstimator_step(float y) {
 	if (!isInit) {
 		estimatorDDInit();
@@ -124,36 +188,28 @@ void DDEstimator_step(float y) {
 
 	if (Nmeas == BUFF_SIZE) {
 		Nmeas = 0;
-		arm_mat_mult_f32(&O_invm, &Ybuffm, &Xm);		
+		estimate_state();
+		estimate_params();	
+		compute_ctrl();
+		set_estimator_ready();
 	}
 
 }
-
-
-
 
 // ====================================
 
 
-// PRIVATE
-bool estimatorReady() {
-	bool outval = false;
-	if (counter >= 10) {
-		counter = 0;
-		outval = true;
-	} else {
-		counter++;
-	}
-	return outval;
-}
-
-
-
-// PUBLIC
+/**
+ * Initialization function 
+ */
 void estimatorDDInit(void) {
 	if (isInit)  {
 		return;
 	}
+
+	Kdd[0] = -L*L;
+	Kdd[1] = 0.5f * TS * L * L  - 2.0f * L;
+	Kdd[2] = 0.0f; 
 
 	init_pseudoinv(&O_invm);
 
@@ -199,36 +255,35 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 //	}
 
 
-//	if (output != ctrl_dd) {
-//		ctrl_dd = output;
-//		dd_controller_push_ctrl(ctrl_dd);
-//		timestamp_ctrl = usecTimestamp();
-//	}
-
-	//	if (estimatorReady()) {
-	//		// Update the status of the estimator
-	//		xSemaphoreTake(mutex, portMAX_DELAY);
-	//		updated = true;
-	//		xSemaphoreGive(mutex);
-	//	}
-
 	return true;
 }
 
-double estimatorDDGetEstimatedZ() {
+float estimatorDDGetEstimatedZ() {
 	return state_z;
 }
 
+/**
+ * Check whether the estimator is ready. In that case
+ * reset the flag and return 'true'. Otherwise, return 'false'.
+ */
 bool estimatorDDHasNewEstimate() {
 	bool out;
 
-	xSemaphoreTake(mutex, portMAX_DELAY);
+	//xSemaphoreTake(mutex, portMAX_DELAY);
 	out = updated;
 	if (out)
 		updated = false; // Reset the flag
-	xSemaphoreGive(mutex);
+	//xSemaphoreGive(mutex);
 
 	return out;
+}
+
+void estimatorDDSetControl(const float u) {
+	ctrl_dd = u;
+}
+
+float estimatorDDGetControl() {
+	return ctrl_dd;
 }
 
 
@@ -239,5 +294,6 @@ bool estimatorDDHasNewEstimate() {
 	LOG_ADD(LOG_FLOAT, est_x, &X[0])
 	LOG_ADD(LOG_FLOAT, est_xd, &X[1])
 	LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
+	LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
 	LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
 LOG_GROUP_STOP(estimator_dd)
