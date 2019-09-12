@@ -116,7 +116,7 @@ static struct {
 
 static float thrust_ctrl_dd;
 static float thrust_ctrl_pid;
-static float current_thrust;
+static float current_thrust = 0.0;
 
 static void stabilizerTask(void* param);
 static void testProps(sensorData_t *sensors);
@@ -281,7 +281,7 @@ static void stabilizerTask(void* param)
 			thrust_ctrl_dd = estimatorDDGetControl();
 			thrust_ctrl_pid = control.thrust;
 			if (ddc_active) {
-				thrust_ctrl_pid  = control.thrust;
+				DEBUG_PRINT("DD Controller Active");
 				current_thrust = thrust_ctrl_dd;
 			} else { 
 				// Update the control only if the estimation 
@@ -583,6 +583,7 @@ LOG_GROUP_STOP(ctrltargetZ)
 	LOG_ADD(LOG_FLOAT, pitch, &state.attitude.pitch)
 	LOG_ADD(LOG_FLOAT, yaw, &state.attitude.yaw)
 	LOG_ADD(LOG_UINT16, thrust, &control.thrust)
+	LOG_ADD(LOG_FLOAT, curr_thrust, &current_thrust)
 	LOG_ADD(LOG_FLOAT, dd_thrust, &thrust_ctrl_dd)
 	LOG_ADD(LOG_FLOAT, pid_thrust, &thrust_ctrl_pid)
 LOG_GROUP_STOP(stabilizer)

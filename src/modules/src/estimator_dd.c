@@ -18,7 +18,7 @@
 
 #define STATE_SIZE (3)
 #define BUFF_SIZE (5)
-#define TS (0.010f)
+#define TS (0.004f)
 #define TS2 ((TS) * (TS))
 
 
@@ -85,7 +85,7 @@ static uint32_t msg_counter = 0;
 // ====================================
 // Estimator State 
 static float state_z;
-static float alpha;
+static float alpha = 0.0;
 static float beta;
 
 // Estimator Parametrs
@@ -290,10 +290,10 @@ float estimatorDDGetControl() {
 
 // Logging variables
 //
-	LOG_GROUP_START(estimator_dd)
-	LOG_ADD(LOG_FLOAT, est_x, &X[0])
-	LOG_ADD(LOG_FLOAT, est_xd, &X[1])
-	LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
-	LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
-	LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
+LOG_GROUP_START(estimator_dd)
+LOG_ADD(LOG_FLOAT, est_x, &X[0])
+LOG_ADD(LOG_FLOAT, est_xd, &X[1])
+LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
+LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
+LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
 LOG_GROUP_STOP(estimator_dd)
