@@ -162,7 +162,7 @@ static void estimate_state() {
  */
 static void estimate_params() {
 	beta = 1.0f / droneMass;
-	alpha = alpha - gamma1 * TS * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
+	alpha = alpha - gamma1 * (Tbuff[0] - Tbuff[BUFF_SIZE - 1]) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
 	return;
 }
 
