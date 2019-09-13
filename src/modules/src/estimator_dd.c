@@ -35,6 +35,8 @@ float A[STATE_SIZE * STATE_SIZE] =
 	0.0, 	0.0,	1.0,
 };
 
+
+// On line i: [1, -sum(ts(k)), 1/2 * (sum(ts(k))^2]
 float O[BUFF_SIZE * STATE_SIZE] = 
 {	
 	1.0, 	0.0, 	0.0,
@@ -56,6 +58,8 @@ float O_inv[STATE_SIZE * BUFF_SIZE];
 static float Ybuff[BUFF_SIZE];
 static float X[STATE_SIZE];
 static float X_old[3];
+
+static float Tbuff[BUFF_SIZE];
 
 // Temp Buffers for the evaluation of the pseudoinverse
 float TempNyNx[BUFF_SIZE * STATE_SIZE];
@@ -79,6 +83,7 @@ static uint64_t timestamp_old;
 //static uint64_t timestamp_ctrl;
 
 float dt_ms;
+float t_s;
 float dt_ms_cum = 0;
 static uint32_t msg_counter = 0;
 
@@ -116,7 +121,7 @@ arm_matrix_instance_f32 TempNxNx2m = {STATE_SIZE, STATE_SIZE, TempNxNx2};
 arm_matrix_instance_f32 Ybuffm = {BUFF_SIZE, 1, Ybuff};
 arm_matrix_instance_f32 Xm = {STATE_SIZE, 1, X};
 
-void init_pseudoinv(arm_matrix_instance_f32* Pseudo) {
+void eval_pseudoinv(arm_matrix_instance_f32* Pseudo) {
 	arm_mat_trans_f32(&Om, &TempNxNym); // O'
 	arm_mat_mult_f32(&TempNxNym, &Om, &TempNxNxm); // (O' x O)
 	arm_mat_inverse_f32(&TempNxNxm, &TempNxNx2m); // (O' x O)^-1 x O' = Pseudo inverse
@@ -174,26 +179,67 @@ static void compute_ctrl() {
 	ctrl_dd = (1.0f / beta) * (-alpha + u_fb);
 }
 
+/** 
+ * Insert the k-th measurement in the buffer
+ */
+static void insert_newmeas(float y, float stamp, int k) {
+	if (k < 0) {
+		// Error
+	}
+	int index = (BUFF_SIZE - 1) - (k % BUFF_SIZE);
+	Ybuff[index] = y;
+	Tbuff[index] = stamp;
+}
+
+
+static void update_O(float t[BUFF_SIZE]) {
+	int i;
+	for (i = 0; i < BUFF_SIZE; i++) {
+		O[(i*STATE_SIZE) + 1] = -(i * t[i]);
+		O[(i*STATE_SIZE) + 2] = 0.5f * (t[i] * t[i]);
+	}
+
+}
+
+static void finalize_data() {
+	int i;
+
+	// Finalize the DT vector, computing the differences
+	// [0, dt1, dt1 + dt2, ...]
+	for (i = 0; i < BUFF_SIZE; i++) {
+		Tbuff[i] = Tbuff[0] - Tbuff[i];
+	}
+
+	// Update the Observability matrix
+	update_O(Tbuff);
+
+	// Update the pseduoinverse matrix
+	// TODO: Either make everything static with void calls,
+	// 	either pass the values inside all the chain of calls
+	eval_pseudoinv(&O_invm);
+}
+
 /**
  * Estimator step function
  */
-void DDEstimator_step(float y) {
+void DDEstimator_step(float y, float stamp) {
 	if (!isInit) {
 		estimatorDDInit();
 	}
 
 	// Update the buffer
-	Ybuff[Nmeas % BUFF_SIZE] = y;
+	insert_newmeas(y, stamp, Nmeas);
 	Nmeas++;
 
 	if (Nmeas == BUFF_SIZE) {
 		Nmeas = 0;
+		finalize_data();
+
 		estimate_state();
 		estimate_params();	
 		compute_ctrl();
 		set_estimator_ready();
 	}
-
 }
 
 // ====================================
@@ -211,7 +257,7 @@ void estimatorDDInit(void) {
 	Kdd[1] = 0.5f * TS * L * L  - 2.0f * L;
 	Kdd[2] = 0.0f; 
 
-	init_pseudoinv(&O_invm);
+	eval_pseudoinv(&O_invm);
 
 	mutex = xSemaphoreCreateMutex();
 
@@ -233,13 +279,14 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 
 	// Measure the timestamp
 	timestamp = usecTimestamp(); // Time in microseconds
-	dt_ms = (timestamp - timestamp_old)/1000.0;
+	dt_ms = (timestamp - timestamp_old) / 1e3;
+	t_s = timestamp / 1e6;
 	timestamp_old = timestamp;
 
 	state_z = pos->z;
 
 	// Do something with the new measurement 
-	DDEstimator_step(state_z);
+	DDEstimator_step(state_z, t_s);
 
 //	if (msg_counter == 1000) {
 //		DEBUG_PRINT("\n");
