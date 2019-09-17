@@ -281,7 +281,7 @@ static void stabilizerTask(void* param)
 			thrust_ctrl_dd = estimatorDDGetControl();
 			thrust_ctrl_pid = control.thrust;
 			if (ddc_active) {
-				DEBUG_PRINT("DD Controller Active");
+				//DEBUG_PRINT("DD Controller Active");
 				current_thrust = thrust_ctrl_dd;
 			} else { 
 				// Update the control only if the estimation 

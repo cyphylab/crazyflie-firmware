@@ -220,11 +220,11 @@ static void finalize_data() {
 	// 	either pass the values inside all the chain of calls
 	eval_pseudoinv(&O_invm);
 
-	static int counter = 0;
-	if (counter == 150) {
-		DEBUG_PRINT("[ %.3f, %.3f, %.3f, %.3f , %.3f]\n", (double)Tbuff[0], (double)Tbuff[1], (double)Tbuff[2], (double)Tbuff[3], (double)Tbuff[4]);
-	}
-	counter++;
+//	static int counter = 0;
+//	if (counter == 150) {
+//		DEBUG_PRINT("[ %.3f, %.3f, %.3f, %.3f , %.3f]\n", (double)Tbuff[0], (double)Tbuff[1], (double)Tbuff[2], (double)Tbuff[3], (double)Tbuff[4]);
+//	}
+//	counter++;
 }
 
 /**
