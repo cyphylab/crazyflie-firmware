@@ -91,7 +91,7 @@ static uint32_t msg_counter = 0;
 // Estimator State 
 static float state_z;
 static float alpha = 0.0;
-static float beta = 1.0;
+static float beta = 1.0f/droneMass;
 
 // Estimator Parametrs
 static float gamma1 = 3.0f;
@@ -100,7 +100,7 @@ static float gamma1 = 3.0f;
 static float L = 900;
 static float Kdd[3];
 static float ctrl_dd;
-static float Tracking[] = {0.0, 0.0, 0.0};
+static float Tracking[] = {1.2f, 0.0, 0.0};
 
 static bool updated = false;
 
@@ -161,9 +161,8 @@ static void estimate_state() {
  * Estimate params
  */
 static void estimate_params() {
-	float beta_new = beta - gamma1 * ctrl_dd * Tbuff[BUFF_SIZE - 1] * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]); 
+	//float beta_new = beta - gamma1 * ctrl_dd * Tbuff[BUFF_SIZE - 1] * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]); 
 	alpha = alpha - gamma1 * (Tbuff[BUFF_SIZE - 1]) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
-	beta = beta_new;
 	return;
 }
 
@@ -174,6 +173,12 @@ static void estimate_params() {
 static void compute_ctrl() {
 	int i;
 	float u_fb = 0;
+
+	// Update the control gain
+	Kdd[0] = -L*L;
+	Kdd[1] = 0.5f * Tbuff[BUFF_SIZE - 1] * TS * L * L  - 2.0f * L;
+	Kdd[2] = 0.0f; 
+
 	for (i = 0; i < 3; i++) {
 		u_fb += Kdd[i] * (X[i] - Tracking[i]);
 	}
@@ -262,9 +267,10 @@ void estimatorDDInit(void) {
 	}
 
 	Kdd[0] = -L*L;
-	Kdd[1] = 0.5f * TS * L * L  - 2.0f * L;
+	Kdd[1] = 0.5f * BUFF_SIZE * TS * L * L  - 2.0f * L;
 	Kdd[2] = 0.0f; 
 
+	DEBUG_PRINT("DD Controller Gain: [%.3f, %.3f] \n", (double)Kdd[0], (double)Kdd[1]);
 	eval_pseudoinv(&O_invm);
 
 	mutex = xSemaphoreCreateMutex();
@@ -353,3 +359,8 @@ LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
 LOG_ADD(LOG_FLOAT, est_beta, &beta)
 LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
 LOG_GROUP_STOP(estimator_dd)
+
+PARAM_GROUP_START(controller_dd)
+PARAM_ADD(PARAM_FLOAT, ctrl_dd_L, &L)
+PARAM_GROUP_STOP(controller_dd)
+
