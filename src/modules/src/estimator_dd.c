@@ -91,7 +91,7 @@ static uint32_t msg_counter = 0;
 // Estimator State 
 static float state_z;
 static float alpha = 0.0;
-static float beta;
+static float beta = 1.0;
 
 // Estimator Parametrs
 static float gamma1 = 3.0f;
@@ -161,8 +161,9 @@ static void estimate_state() {
  * Estimate params
  */
 static void estimate_params() {
-	beta = 1.0f / droneMass;
-	alpha = alpha - gamma1 * (Tbuff[0] - Tbuff[BUFF_SIZE - 1]) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
+	float beta_new = beta - gamma1 * ctrl_dd * Tbuff[BUFF_SIZE - 1] * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]); 
+	alpha = alpha - gamma1 * (Tbuff[BUFF_SIZE - 1]) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
+	beta = beta_new;
 	return;
 }
 
@@ -206,8 +207,9 @@ static void finalize_data() {
 
 	// Finalize the DT vector, computing the differences
 	// [0, dt1, dt1 + dt2, ...]
+	float Tinit = Tbuff[0];
 	for (i = 0; i < BUFF_SIZE; i++) {
-		Tbuff[i] = Tbuff[0] - Tbuff[i];
+		Tbuff[i] = Tinit - Tbuff[i];
 	}
 
 	// Update the Observability matrix
@@ -217,6 +219,12 @@ static void finalize_data() {
 	// TODO: Either make everything static with void calls,
 	// 	either pass the values inside all the chain of calls
 	eval_pseudoinv(&O_invm);
+
+	static int counter = 0;
+	if (counter == 150) {
+		DEBUG_PRINT("[ %.3f, %.3f, %.3f, %.3f , %.3f]\n", (double)Tbuff[0], (double)Tbuff[1], (double)Tbuff[2], (double)Tbuff[3], (double)Tbuff[4]);
+	}
+	counter++;
 }
 
 /**
@@ -342,5 +350,6 @@ LOG_ADD(LOG_FLOAT, est_x, &X[0])
 LOG_ADD(LOG_FLOAT, est_xd, &X[1])
 LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
 LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
+LOG_ADD(LOG_FLOAT, est_beta, &beta)
 LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
 LOG_GROUP_STOP(estimator_dd)
