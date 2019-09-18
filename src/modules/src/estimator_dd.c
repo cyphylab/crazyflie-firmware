@@ -170,18 +170,23 @@ static void estimate_params() {
 /**
  * Compute control value
  */
+static float u_p;
+static float u_d;
+static float u_a;
 static void compute_ctrl() {
-	int i;
 	float u_fb = 0;
 
 	// Update the control gain
 	Kdd[0] = -L*L;
-	Kdd[1] = 0.5f * Tbuff[BUFF_SIZE - 1] * TS * L * L  - 2.0f * L;
+	Kdd[1] = 0.5f * Tbuff[BUFF_SIZE - 1] * L * L  - 2.0f * L;
 	Kdd[2] = 0.0f; 
 
-	for (i = 0; i < 3; i++) {
-		u_fb += Kdd[i] * (X[i] - Tracking[i]);
-	}
+	u_p = Kdd[0] * (X[0] - Tracking[0]);
+	u_d = Kdd[1] * (X[1] - Tracking[1]);
+	u_a = Kdd[2] * (X[2] - Tracking[2]);
+
+	u_fb = u_p + u_d + u_a;	
+
 	ctrl_dd = (1.0f / beta) * (-alpha + u_fb);
 }
 
@@ -358,7 +363,13 @@ LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
 LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
 LOG_ADD(LOG_FLOAT, est_beta, &beta)
 LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
+LOG_ADD(LOG_FLOAT, est_dt_s, &Tbuff[BUFF_SIZE - 1])
 LOG_GROUP_STOP(estimator_dd)
+
+LOG_GROUP_START(controller_dd)
+LOG_ADD(LOG_FLOAT, up, &u_p)
+LOG_ADD(LOG_FLOAT, ud, &u_d)
+LOG_GROUP_STOP(controller_dd)
 
 PARAM_GROUP_START(controller_dd)
 PARAM_ADD(PARAM_FLOAT, ctrl_dd_L, &L)
