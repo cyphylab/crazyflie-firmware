@@ -98,6 +98,7 @@ typedef struct positionMeasurement_s {
     };
     float pos[3];
   };
+  float t;
   float stdDev;
 } positionMeasurement_t;
 

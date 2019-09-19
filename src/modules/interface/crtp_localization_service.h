@@ -36,6 +36,7 @@ struct CrtpExtPosition
   float x; // in m
   float y; // in m
   float z; // in m
+  float t; // in sec
 } __attribute__((packed));
 
 struct CrtpExtPose

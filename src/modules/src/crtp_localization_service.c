@@ -140,8 +140,9 @@ static void extPositionHandler(CRTPPacket* pk)
   ext_pos.y = data->y;
   ext_pos.z = data->z;
   ext_pos.stdDev = extPosStdDev;
+  ext_pos.t = data->t; // Timestamp in second
   estimatorEnqueuePosition(&ext_pos);
-	estimatorDDNewMeasurement(&ext_pos);
+  estimatorDDNewMeasurement(&ext_pos);
 }
 
 static void genericLocHandle(CRTPPacket* pk)
