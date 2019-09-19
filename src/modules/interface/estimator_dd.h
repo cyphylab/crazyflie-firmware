@@ -26,5 +26,7 @@ void estimatorDDSetControl(const float v);
 // Check whether the estimator has a finished the estimation cycle
 bool estimatorDDHasNewEstimate();
 
+// Start alpha and beta least squares
+void estimatorDDParamLeastSquares(void);
 
 #endif

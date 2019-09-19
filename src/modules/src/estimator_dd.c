@@ -91,19 +91,28 @@ static uint32_t msg_counter = 0;
 // ====================================
 // Estimator State 
 static float state_z;
-static float alpha = -10.0f;
-static float beta = 2.857736964347366f*1e-4f;
-// 1.0f/droneMass;
+static float alpha = 0.0f;
+static float alpha_new = 0.0f;
+static float beta = 2.8577f*1e-4f;
+// /droneMass;
 
 // Estimator Parametrs
-static float gamma1 = 1e-10f;
+static float gamma1 = 20.0f;
 
 // Control gain
-static float L = 2.0f;
+static float P1 = 2.0f;
+static float P2 = 2.0f;
 static float Kdd[3];
 static float ctrl_dd;
+static float ctrl_ddd;
 static float Tracking[] = {1.2f, 0.0, 0.0};
 
+// Control Placeholder
+static float u = 0;
+
+// Step Counter
+static int Step=3;
+static bool ctrl_dd_active = false;
 static bool updated = false;
 
 // ====================================
@@ -163,8 +172,36 @@ static void estimate_state() {
  * Estimate params
  */
 static void estimate_params() {
-	//float beta_new = beta - gamma1 * ctrl_dd * Dtbuff * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]); 
-	alpha = alpha - gamma1 * (Dtbuff) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
+    if (ctrl_dd_active) {
+        Step++;
+        switch (Step) {
+            case 1:
+                alpha_new = alpha - (alpha + ctrl_dd * beta) +  1.0f/(Dtbuff) * (X[1] - X_old[1]); 
+                beta = beta;
+                alpha = alpha_new; 
+                u = 41000.0f;
+                estimatorDDSetControl(u);
+                break;
+            case 2:
+                alpha_new = alpha + ctrl_ddd / (Dtbuff * (ctrl_ddd - ctrl_dd))* ((X[1] - X_old[1]) - Dtbuff * (alpha + ctrl_dd * beta)); 
+                beta = beta + ctrl_ddd / (Dtbuff * (ctrl_dd - ctrl_ddd)) * ((X[1] - X_old[1]) - Dtbuff * (alpha + ctrl_dd * beta));
+                alpha = alpha_new;
+                break;  
+            default:
+                alpha_new = alpha - gamma1 * (Dtbuff) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
+                // beta = beta - gamma1 * ctrl_dd * Dtbuff * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+                alpha = alpha_new;
+                break;  
+        }
+    }
+    else {
+        alpha_new = alpha - gamma1 * (Dtbuff) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
+        // beta = beta - gamma1 * ctrl_dd * Dtbuff * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+        alpha = alpha_new; 
+    }
+    if (beta<1e-6f){
+        beta = 1e-6f;
+    }
 	return;
 }
 
@@ -179,8 +216,8 @@ static void compute_ctrl() {
 	float u_fb = 0;
 
 	// Update the control gain
-	Kdd[0] = -L*L;
-	Kdd[1] = - 2.0f * L;
+	Kdd[0] = -P1 * P2;
+	Kdd[1] = P1 + P2;
 	Kdd[2] = 0.0f; 
 
 	u_p = Kdd[0] * (X[0] - Tracking[0]);
@@ -189,13 +226,16 @@ static void compute_ctrl() {
 
 	u_fb = u_p + u_d + u_a;	
 
-	ctrl_dd = (1.0f / beta) * (-alpha + u_fb);
-    if (ctrl_dd < 0.0f) {
-        ctrl_dd = 0.0f;
+	u = (1.0f / beta) * (-alpha + u_fb);
+
+    if (u < 0.0f) {
+        u = 0.0f;
     }
-    if (ctrl_dd > 65535.0f) {
-        ctrl_dd = 65535.0f;
+    if (u > 65535.0f) {
+        u = 65535.0f;
     }
+
+    estimatorDDSetControl(u);
 }
 
 /** 
@@ -263,8 +303,10 @@ void DDEstimator_step(float y, float stamp) {
 		finalize_data();
 
 		estimate_state();
-		estimate_params();	
-		compute_ctrl();
+		estimate_params();
+        if (ctrl_dd_active && Step > 1) {	
+		    compute_ctrl();
+        }
 		set_estimator_ready();
 	}
 }
@@ -280,8 +322,8 @@ void estimatorDDInit(void) {
 		return;
 	}
 
-	Kdd[0] = -L*L;
-	Kdd[1] = -2.0f * L;
+	Kdd[0] = -P1 * P2;
+	Kdd[1] = -P1 + P2;
 	Kdd[2] = 0.0f; 
 
 	DEBUG_PRINT("DD Controller Gain: [%.3f, %.3f] \n", (double)Kdd[0], (double)Kdd[1]);
@@ -354,6 +396,7 @@ bool estimatorDDHasNewEstimate() {
 }
 
 void estimatorDDSetControl(const float u) {
+    ctrl_ddd=ctrl_dd;
 	ctrl_dd = u;
 }
 
@@ -361,6 +404,10 @@ float estimatorDDGetControl() {
 	return ctrl_dd;
 }
 
+void estimatorDDParamLeastSquares(void) {   
+    ctrl_dd_active = true;
+} 
+    
 
 
 // Logging variables
@@ -381,6 +428,8 @@ LOG_ADD(LOG_FLOAT, ud, &u_d)
 LOG_GROUP_STOP(controller_dd)
 
 PARAM_GROUP_START(controller_dd)
-PARAM_ADD(PARAM_FLOAT, ctrl_dd_L, &L)
+PARAM_ADD(PARAM_FLOAT, ctrl_ddP1, &P1)
+PARAM_ADD(PARAM_FLOAT, ctrl_ddP2, &P2)
+PARAM_ADD(PARAM_FLOAT, ctrl_dd_g, &gamma1)
 PARAM_GROUP_STOP(controller_dd)
 

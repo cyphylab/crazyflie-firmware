@@ -54,6 +54,7 @@
 
 static bool isInit;
 static bool emergencyStop = false;
+static bool ddc_leastsquares = false;
 static int emergencyStopTimeout = EMERGENCY_STOP_TIMEOUT_DISABLED;
 
 #define PROPTEST_NBR_OF_VARIANCE_VALUES   100
@@ -283,6 +284,11 @@ static void stabilizerTask(void* param)
 			if (ddc_active) {
 				//DEBUG_PRINT("DD Controller Active");
 				current_thrust = thrust_ctrl_dd;
+                if (!ddc_leastsquares) {
+                    estimatorDDParamLeastSquares();
+                    ddc_leastsquares = true;
+                }
+                
 			} else { 
 				// Update the control only if the estimation 
 				// ready 
