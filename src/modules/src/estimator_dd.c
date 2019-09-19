@@ -60,6 +60,7 @@ static float X[STATE_SIZE];
 static float X_old[3];
 
 static float Tbuff[BUFF_SIZE];
+static float Dtbuff;
 
 // Temp Buffers for the evaluation of the pseudoinverse
 float TempNyNx[BUFF_SIZE * STATE_SIZE];
@@ -90,14 +91,15 @@ static uint32_t msg_counter = 0;
 // ====================================
 // Estimator State 
 static float state_z;
-static float alpha = 0.0;
-static float beta = 1.0f/droneMass;
+static float alpha = -10.0f;
+static float beta = 2.857736964347366f*1e-4f;
+// 1.0f/droneMass;
 
 // Estimator Parametrs
-static float gamma1 = 3.0f;
+static float gamma1 = 1e-10f;
 
 // Control gain
-static float L = 900;
+static float L = 2.0f;
 static float Kdd[3];
 static float ctrl_dd;
 static float Tracking[] = {1.2f, 0.0, 0.0};
@@ -161,8 +163,8 @@ static void estimate_state() {
  * Estimate params
  */
 static void estimate_params() {
-	//float beta_new = beta - gamma1 * ctrl_dd * Tbuff[BUFF_SIZE - 1] * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]); 
-	alpha = alpha - gamma1 * (Tbuff[BUFF_SIZE - 1]) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
+	//float beta_new = beta - gamma1 * ctrl_dd * Dtbuff * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]); 
+	alpha = alpha - gamma1 * (Dtbuff) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]); 
 	return;
 }
 
@@ -178,7 +180,7 @@ static void compute_ctrl() {
 
 	// Update the control gain
 	Kdd[0] = -L*L;
-	Kdd[1] = 0.5f * Tbuff[BUFF_SIZE - 1] * L * L  - 2.0f * L;
+	Kdd[1] = - 2.0f * L;
 	Kdd[2] = 0.0f; 
 
 	u_p = Kdd[0] * (X[0] - Tracking[0]);
@@ -188,6 +190,12 @@ static void compute_ctrl() {
 	u_fb = u_p + u_d + u_a;	
 
 	ctrl_dd = (1.0f / beta) * (-alpha + u_fb);
+    if (ctrl_dd < 0.0f) {
+        ctrl_dd = 0.0f;
+    }
+    if (ctrl_dd > 65535.0f) {
+        ctrl_dd = 65535.0f;
+    }
 }
 
 /** 
@@ -221,6 +229,7 @@ static void finalize_data() {
 	for (i = 0; i < BUFF_SIZE; i++) {
 		Tbuff[i] = Tinit - Tbuff[i];
 	}
+    Dtbuff = Tbuff[BUFF_SIZE-1];
 
 	// Update the Observability matrix
 	update_O(Tbuff);
@@ -272,7 +281,7 @@ void estimatorDDInit(void) {
 	}
 
 	Kdd[0] = -L*L;
-	Kdd[1] = 0.5f * BUFF_SIZE * TS * L * L  - 2.0f * L;
+	Kdd[1] = -2.0f * L;
 	Kdd[2] = 0.0f; 
 
 	DEBUG_PRINT("DD Controller Gain: [%.3f, %.3f] \n", (double)Kdd[0], (double)Kdd[1]);
@@ -363,7 +372,7 @@ LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
 LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
 LOG_ADD(LOG_FLOAT, est_beta, &beta)
 LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
-LOG_ADD(LOG_FLOAT, est_dt_s, &Tbuff[BUFF_SIZE - 1])
+LOG_ADD(LOG_FLOAT, est_dt_s, &Dtbuff)
 LOG_GROUP_STOP(estimator_dd)
 
 LOG_GROUP_START(controller_dd)
