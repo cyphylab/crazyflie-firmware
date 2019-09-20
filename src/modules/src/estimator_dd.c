@@ -37,14 +37,7 @@ float A[STATE_SIZE * STATE_SIZE] =
 
 
 // On line i: [1, -sum(ts(k)), 1/2 * (sum(ts(k))^2]
-float O[BUFF_SIZE * STATE_SIZE] = 
-{	
-	1.0, 	0.0, 	0.0,
-	1.0, 	-TS, 	TS2/2,
-	1.0, 	-2*TS, 	2*TS2,
-	1.0, 	-3*TS,	9/2*TS2,
-	1.0, 	-4*TS, 	8*TS2,
-};
+float O[BUFF_SIZE * STATE_SIZE];
 
 // C matrix
 float C[STATE_SIZE] = {1, 0, 0};
@@ -60,7 +53,8 @@ static float X[STATE_SIZE];
 static float X_old[3];
 
 static float Tbuff[BUFF_SIZE];
-static float Dtbuff;
+static float DTbuff[BUFF_SIZE];
+static float T;
 
 // Temp Buffers for the evaluation of the pseudoinverse
 float TempNyNx[BUFF_SIZE * STATE_SIZE];
@@ -79,8 +73,8 @@ static bool isInit = false;
 static xSemaphoreHandle mutex;
 
 // Timestamps
-static uint64_t timestamp;
-static uint64_t timestamp_old;
+static float timestamp;
+static float timestamp_old;
 //static uint64_t timestamp_ctrl;
 
 float dt_ms;
@@ -176,27 +170,27 @@ static void estimate_params() {
         Step++;
         switch (Step) {
             case 1:
-                alpha_new = alpha - (alpha + ctrl_dd * beta) +  1.0f/(Dtbuff) * (X[1] - X_old[1]); 
+                alpha_new = alpha - (alpha + ctrl_dd * beta) +  1.0f/(T) * (X[1] - X_old[1]); 
                 beta = beta;
                 alpha = alpha_new; 
                 u = 41000.0f;
                 estimatorDDSetControl(u);
                 break;
             case 2:
-                alpha_new = alpha + ctrl_ddd / (Dtbuff * (ctrl_ddd - ctrl_dd))* ((X[1] - X_old[1]) - Dtbuff * (alpha + ctrl_dd * beta)); 
-                beta = beta + ctrl_ddd / (Dtbuff * (ctrl_dd - ctrl_ddd)) * ((X[1] - X_old[1]) - Dtbuff * (alpha + ctrl_dd * beta));
+                alpha_new = alpha + ctrl_ddd / (T * (ctrl_ddd - ctrl_dd))* ((X[1] - X_old[1]) - T * (alpha + ctrl_dd * beta)); 
+                beta = beta + ctrl_ddd / (T * (ctrl_dd - ctrl_ddd)) * ((X[1] - X_old[1]) - T * (alpha + ctrl_dd * beta));
                 alpha = alpha_new;
                 break;  
             default:
-                alpha_new = alpha - gamma1 * (Dtbuff) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-                // beta = beta - gamma1 * ctrl_dd * Dtbuff * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+                alpha_new = alpha - gamma1 * (T) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
+                // beta = beta - gamma1 * ctrl_dd * T * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
                 alpha = alpha_new;
                 break;  
         }
     }
     else {
-        alpha_new = alpha - gamma1 * (Dtbuff) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-        // beta = beta - gamma1 * ctrl_dd * Dtbuff * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+        alpha_new = alpha - gamma1 * (T) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
+        // beta = beta - gamma1 * ctrl_dd * T * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
         alpha = alpha_new; 
     }
     if (beta<1e-6f){
@@ -225,7 +219,7 @@ static void compute_ctrl() {
 	u_a = Kdd[2] * (X[2] - Tracking[2]);
 
 	u_fb = u_p + u_d + u_a;	
-
+    alpha=-12.383f;
 	u = (1.0f / beta) * (-alpha + u_fb);
 
     if (u < 0.0f) {
@@ -241,7 +235,7 @@ static void compute_ctrl() {
 /** 
  * Insert the k-th measurement in the buffer
  */
-static void insert_newmeas(float y, float stamp, int k) {
+static void insert_newmeas_batch(float y, float stamp, int k) {
 	if (k < 0) {
 		// Error
 	}
@@ -250,6 +244,15 @@ static void insert_newmeas(float y, float stamp, int k) {
 	Tbuff[index] = stamp;
 }
 
+static void insert_newmeas_circ(float y, float stamp) {
+  
+    for (int index = BUFF_SIZE-1; index > 0; index--) { 
+	Ybuff[index] = Ybuff[index-1];
+	Tbuff[index] = Tbuff[index-1];       
+    }
+    Ybuff[0] = y;
+    Tbuff[0] = stamp;
+}
 
 static void update_O(float t[BUFF_SIZE]) {
 	int i;
@@ -257,22 +260,20 @@ static void update_O(float t[BUFF_SIZE]) {
 		O[(i*STATE_SIZE) + 1] = -(i * t[i]);
 		O[(i*STATE_SIZE) + 2] = 0.5f * (t[i] * t[i]);
 	}
-
 }
 
 static void finalize_data() {
-	int i;
 
 	// Finalize the DT vector, computing the differences
 	// [0, dt1, dt1 + dt2, ...]
-	float Tinit = Tbuff[0];
-	for (i = 0; i < BUFF_SIZE; i++) {
-		Tbuff[i] = Tinit - Tbuff[i];
+	DTbuff[0] = Tbuff[0];
+	for (int i = 0; i < BUFF_SIZE; i++) {
+		DTbuff[i] = Tbuff[0] - Tbuff[i];
 	}
-    Dtbuff = Tbuff[BUFF_SIZE-1];
+    T = DTbuff[BUFF_SIZE-1];
 
 	// Update the Observability matrix
-	update_O(Tbuff);
+	update_O(DTbuff);
 
 	// Update the pseduoinverse matrix
 	// TODO: Either make everything static with void calls,
@@ -289,13 +290,36 @@ static void finalize_data() {
 /**
  * Estimator step function
  */
-void DDEstimator_step(float y, float stamp) {
+void DDEstimator_step_circ(float y, float stamp) {
 	if (!isInit) {
 		estimatorDDInit();
 	}
 
 	// Update the buffer
-	insert_newmeas(y, stamp, Nmeas);
+	insert_newmeas_circ(y, stamp);
+
+
+	if (Nmeas >= BUFF_SIZE) {
+		finalize_data();
+		estimate_state();
+		estimate_params();
+        if (ctrl_dd_active && Step > 1) {	
+		    compute_ctrl();
+        }
+		set_estimator_ready();
+	}
+    else{
+	Nmeas++;
+    }    
+}
+
+void DDEstimator_step_batch(float y, float stamp) {
+	if (!isInit) {
+		estimatorDDInit();
+	}
+
+	// Update the buffer
+	insert_newmeas_batch(y, stamp, Nmeas);
 	Nmeas++;
 
 	if (Nmeas == BUFF_SIZE) {
@@ -311,8 +335,18 @@ void DDEstimator_step(float y, float stamp) {
 	}
 }
 
-// ====================================
 
+
+
+// ====================================
+void init_O() {
+  	int i;
+	for (i = 0; i < BUFF_SIZE; i++) {
+        O[(i*STATE_SIZE) + 0] = 1;
+		O[(i*STATE_SIZE) + 1] = -(i * TS);
+		O[(i*STATE_SIZE) + 2] = 0.5f * (i * i * TS2);
+	}  
+}
 
 /**
  * Initialization function 
@@ -327,7 +361,9 @@ void estimatorDDInit(void) {
 	Kdd[2] = 0.0f; 
 
 	DEBUG_PRINT("DD Controller Gain: [%.3f, %.3f] \n", (double)Kdd[0], (double)Kdd[1]);
-	eval_pseudoinv(&O_invm);
+    init_O();	
+    // DEBUG_PRINT("O: [%.3f, %.3f, %.3f, \n %.3f, %.3f, %.6f, \n %.3f, %.3f, %.6f, \n %.3f, %.3f, %.6f, \n %.3f, %.3f, %.6f] \n", (double)O[0], (double)O[1], (double)O[2], (double)O[3], (double)O[4], (double)O[5], (double)O[6], (double)O[7], (double)O[8], (double)O[9], (double)O[10], (double)O[11], (double)O[12], (double)O[13], (double)O[14]);
+    eval_pseudoinv(&O_invm);
 
 	mutex = xSemaphoreCreateMutex();
 
@@ -337,6 +373,8 @@ void estimatorDDInit(void) {
 	isInit = true;
 	return;
 }
+
+
 
 bool estimatorDDTest(void) {
 	return isInit;
@@ -348,15 +386,26 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 	msg_counter = msg_counter + 1;
 
 	// Measure the timestamp
-	timestamp = usecTimestamp(); // Time in microseconds
-	dt_ms = (timestamp - timestamp_old) / 1e3;
-	t_s = timestamp / 1e6;
+	timestamp = pos->t; // Time in second
+	dt_ms = (timestamp - timestamp_old) * 1e3f;
+	t_s = timestamp;
+/*
+    static int counter = 0;
+    
+    if (counter == 400) {
+        DEBUG_PRINT("Timestamp = %.6f s \n", (double)timestamp);
+        DEBUG_PRINT("Old = %.6f \n", (double)timestamp_old);
+        DEBUG_PRINT("DT = %.6f ms \n", (double)dt_ms);
+        counter = 0;
+    }
+    counter++;
+*/
 	timestamp_old = timestamp;
 
 	state_z = pos->z;
 
 	// Do something with the new measurement 
-	DDEstimator_step(state_z, t_s);
+	DDEstimator_step_circ(state_z, t_s);
 
 //	if (msg_counter == 1000) {
 //		DEBUG_PRINT("\n");
@@ -419,7 +468,7 @@ LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
 LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
 LOG_ADD(LOG_FLOAT, est_beta, &beta)
 LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
-LOG_ADD(LOG_FLOAT, est_dt_s, &Dtbuff)
+LOG_ADD(LOG_FLOAT, est_dt_s, &T)
 LOG_GROUP_STOP(estimator_dd)
 
 LOG_GROUP_START(controller_dd)
