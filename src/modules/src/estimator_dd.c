@@ -105,7 +105,7 @@ static float P2 = 1.0f;
 static float Kdd[3];
 static float ctrl_dd;
 static float ctrl_ddd;
-static float Tracking[] = {1.2f, 0.0, 0.0};
+static float Tracking[] = {1.5f, 0.0, 0.0};
 
 // Control Placeholder
 static float u = 0;
@@ -216,7 +216,7 @@ static void compute_ctrl() {
 	float u_fb = 0;
 
 	// Update the control gain
-	Kdd[0] = -P1 * P2;
+	Kdd[0] = - P1 * P2;
 	Kdd[1] = P1 + P2;
 	Kdd[2] = 0.0f; 
 
@@ -225,7 +225,7 @@ static void compute_ctrl() {
 	u_a = Kdd[2] * (X[2] - Tracking[2]);
 
 	u_fb = u_p + u_d + u_a;	
-	alpha=-12.100f;
+	// alpha=-12.0f;
 	u = (1.0f / beta) * (-alpha + u_fb);
 
 	if (u < 0.0f) {
@@ -263,8 +263,8 @@ static void insert_newmeas_circ(float y, float stamp) {
 static void update_O(float t[BUFF_SIZE]) {
 	int i;
 	for (i = 0; i < BUFF_SIZE; i++) {
-		O[(i*STATE_SIZE) + 1] = -(i * t[i]);
-		O[(i*STATE_SIZE) + 2] = 0.5f * (i * i * t[i] * t[i]);
+		O[(i*STATE_SIZE) + 1] = -(t[i]);
+		O[(i*STATE_SIZE) + 2] = 0.5f * (t[i] * t[i]);
 	}
 }
 
@@ -278,12 +278,12 @@ static void finalize_data() {
 		DTbuff[i] = Tbuff[0] - Tbuff[i];
 	}
 	//TotalTime = DTbuff[BUFF_SIZE-1];
-	TotalTime = DTbuff[1];
+	TotalTime = DTbuff[4];
 
-
+    
 	// Update the Observability matrix
-	update_O(DTbuff);
-
+	update_O(DTbuff); 
+	
 	// Update the pseduoinverse matrix
 	// TODO: Either make everything static with void calls,
 	// 	either pass the values inside all the chain of calls
@@ -433,7 +433,7 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 	state_z = pos->z;
 
 	// Do something with the new measurement 
-	DDEstimator_step_batch(state_z, t_s);
+	DDEstimator_step_circ(state_z, t_s);
 
 	//	if (msg_counter == 1000) {
 	//		DEBUG_PRINT("\n");
