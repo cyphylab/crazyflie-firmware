@@ -22,7 +22,7 @@
 #define TS2 ((TS) * (TS))
 
 
-#define  droneMass (0.032f);
+#define  droneMass (0.032f)
 
 // ===================================
 // MEMORY BUFFERS 
@@ -93,7 +93,7 @@ static uint32_t msg_counter = 0;
 static float state_z;
 static float alpha = 0.0f;
 static float alpha_new = 0.0f;
-static float beta = 2.8577f*1e-4f;
+static float beta = 1.0f; //2.8577f*1e-4f;
 // /droneMass;
 
 // Estimator Parametrs
@@ -110,11 +110,8 @@ static float Tracking[] = {1.5f, 0.0, 0.0};
 // Control Placeholder
 static float u = 0;
 
-// Land Mode
-static float Land = 0;
-
 // Step Counter
-static int Step=3;
+static int Step = 0;
 static bool ctrl_dd_active = false;
 static bool updated = false;
 
@@ -192,14 +189,14 @@ static void estimate_params() {
 				break;  
 			default:
 				alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-				// beta = beta - gamma1 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+				beta = beta - gamma1 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
 				alpha = alpha_new;
 				break;  
 		}
 	}
 	else {
 		alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-		// beta = beta - gamma1 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+		beta = beta - gamma1 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
 		alpha = alpha_new; 
 	}
 	if (beta<1e-6f){
@@ -228,7 +225,7 @@ static void compute_ctrl() {
 	u_a = Kdd[2] * (X[2] - Tracking[2]);
 
 	u_fb = u_p + u_d + u_a;	
-	// alpha=-12.0f;
+	//alpha=-12.0f;
 	u = (1.0f / beta) * (-alpha + u_fb);
 
 	if (u < 0.0f) {
@@ -237,11 +234,8 @@ static void compute_ctrl() {
 	if (u > 65535.0f) {
 		u = 65535.0f;
 	}
-    if (!Land){
-    	estimatorDDSetControl(u);
-    } else{
-    estimatorDDSetControl(0); 
-    }   
+
+	estimatorDDSetControl(u);
 }
 
 /** 
@@ -514,7 +508,5 @@ LOG_GROUP_STOP(estimator_dd)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP1, &P1)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP2, &P2)
 	PARAM_ADD(PARAM_FLOAT, ctrl_dd_g, &gamma1)
-    PARAM_ADD(PARAM_FLOAT, ctrl_ddTr, &Tracking[0])
-    PARAM_ADD(PARAM_FLOAT, ctrl_ddLd, &Land)
 PARAM_GROUP_STOP(controller_dd)
 
