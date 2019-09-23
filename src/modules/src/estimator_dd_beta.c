@@ -110,6 +110,10 @@ static float Tracking[] = {1.5f, 0.0, 0.0};
 // Control Placeholder
 static float u = 0;
 
+// Land Mode
+static float Land = 0;
+
+
 // Step Counter
 static int Step = 0;
 static bool ctrl_dd_active = false;
@@ -235,7 +239,11 @@ static void compute_ctrl() {
 		u = 65535.0f;
 	}
 
-	estimatorDDSetControl(u);
+	if (!Land){
+    	estimatorDDSetControl(u);
+    } else{
+        estimatorDDSetControl(0); 
+    } 
 }
 
 /** 
@@ -508,5 +516,7 @@ LOG_GROUP_STOP(estimator_dd)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP1, &P1)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP2, &P2)
 	PARAM_ADD(PARAM_FLOAT, ctrl_dd_g, &gamma1)
+    PARAM_ADD(PARAM_FLOAT, ctrl_ddTr, &Tracking[0])
+    PARAM_ADD(PARAM_FLOAT, ctrl_ddLd, &Land)
 PARAM_GROUP_STOP(controller_dd)
 

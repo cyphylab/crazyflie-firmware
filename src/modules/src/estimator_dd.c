@@ -22,7 +22,7 @@
 #define TS2 ((TS) * (TS))
 
 
-#define  droneMass (0.032f);
+#define  droneMass (0.032f)
 
 // ===================================
 // MEMORY BUFFERS 
@@ -93,11 +93,12 @@ static uint32_t msg_counter = 0;
 static float state_z;
 static float alpha = 0.0f;
 static float alpha_new = 0.0f;
-static float beta = 2.8577f*1e-4f;
+static float beta = 1.0f; //2.8577f*1e-4f;
 // /droneMass;
 
 // Estimator Parametrs
 static float gamma1 = 1.0f;
+static float gamma2 = 1.0f;
 
 // Control gain
 static float P1 = 1.0f;
@@ -113,9 +114,11 @@ static float u = 0;
 // Land Mode
 static float Land = 0;
 
+
 // Step Counter
-static int Step=3;
+static int Step = 3;
 static bool ctrl_dd_active = false;
+static bool estimate_least_squares = false;
 static bool updated = false;
 
 // ====================================
@@ -179,6 +182,7 @@ static void estimate_params() {
 		Step++;
 		switch (Step) {
 			case 1:
+                estimate_least_squares = true;
 				alpha_new = alpha - (alpha + ctrl_dd * beta) +  1.0f/TotalTime * (X[1] - X_old[1]); 
 				beta = beta;
 				alpha = alpha_new; 
@@ -189,17 +193,18 @@ static void estimate_params() {
 				alpha_new = alpha + ctrl_ddd / (TotalTime * (ctrl_ddd - ctrl_dd))* ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd * beta)); 
 				beta = beta + ctrl_ddd / (TotalTime * (ctrl_dd - ctrl_ddd)) * ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd * beta));
 				alpha = alpha_new;
+                estimate_least_squares = false;
 				break;  
 			default:
 				alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-				// beta = beta - gamma1 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+				beta = beta - gamma2 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma2 * ctrl_dd* (X[1] - X_old[1]);
 				alpha = alpha_new;
 				break;  
 		}
 	}
 	else {
 		alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-		// beta = beta - gamma1 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma1 * ctrl_dd* (X[1] - X_old[1]);
+		beta = beta - gamma2 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma2 * ctrl_dd* (X[1] - X_old[1]);
 		alpha = alpha_new; 
 	}
 	if (beta<1e-6f){
@@ -228,7 +233,7 @@ static void compute_ctrl() {
 	u_a = Kdd[2] * (X[2] - Tracking[2]);
 
 	u_fb = u_p + u_d + u_a;	
-	// alpha=-12.0f;
+	//alpha=-12.0f;
 	u = (1.0f / beta) * (-alpha + u_fb);
 
 	if (u < 0.0f) {
@@ -237,11 +242,13 @@ static void compute_ctrl() {
 	if (u > 65535.0f) {
 		u = 65535.0f;
 	}
-    if (!Land){
-    	estimatorDDSetControl(u);
-    } else{
-    estimatorDDSetControl(0); 
-    }   
+    if (!estimate_least_squares){
+	    if (!Land){
+    	    estimatorDDSetControl(u);
+        } else{
+            estimatorDDSetControl(0); 
+        } 
+    }
 }
 
 /** 
@@ -391,7 +398,7 @@ void estimatorDDInit(void) {
 	}
 
 	Kdd[0] = -P1 * P2;
-	Kdd[1] = -P1 + P2;
+	Kdd[1] = P1 + P2;
 	Kdd[2] = 0.0f; 
 
 	DEBUG_PRINT("DD Controller Gain: [%.3f, %.3f] \n", (double)Kdd[0], (double)Kdd[1]);
@@ -439,7 +446,7 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 	state_z = pos->z;
 
 	// Do something with the new measurement 
-	DDEstimator_step_circ(state_z, t_s);
+	DDEstimator_step_batch(state_z, t_s);
 
 	//	if (msg_counter == 1000) {
 	//		DEBUG_PRINT("\n");
@@ -513,7 +520,10 @@ LOG_GROUP_STOP(estimator_dd)
 	PARAM_GROUP_START(controller_dd)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP1, &P1)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP2, &P2)
-	PARAM_ADD(PARAM_FLOAT, ctrl_dd_g, &gamma1)
+	PARAM_ADD(PARAM_FLOAT, ctrl_ddg1, &gamma1)
+    PARAM_ADD(PARAM_FLOAT, ctrl_ddg2, &gamma2)  
+	PARAM_ADD(PARAM_FLOAT, ctrl_ddA, &alpha)
+    PARAM_ADD(PARAM_FLOAT, ctrl_ddB, &beta)   
     PARAM_ADD(PARAM_FLOAT, ctrl_ddTr, &Tracking[0])
     PARAM_ADD(PARAM_FLOAT, ctrl_ddLd, &Land)
 PARAM_GROUP_STOP(controller_dd)
