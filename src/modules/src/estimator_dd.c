@@ -214,7 +214,6 @@ static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 	float alpha_new = alpha;
 	float beta_new = beta;
 
-
 	float ctrl_dd_scaled = c_dd / 65535.0f;
 	float ctrl_ddd_scaled = c_ddd / 65535.0f;
 	
@@ -242,8 +241,13 @@ static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 			}
 		}
 		else {
-			alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd_scaled * beta) +  gamma1 * (X[1] - X_old[1]);
-			beta_new = beta - gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta) +  gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
+			float a_new_part0 = gamma1 * TotalTime * (alpha + ctrl_dd_scaled * beta);
+			float a_new_part1 =  gamma1 * (X[1] - X_old[1]);
+			alpha_new = alpha - a_new_part0  +  a_new_part1;
+
+			float b_new_part0 = gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta);
+			float b_new_part1 = gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
+			beta_new = beta - b_new_part0 +  b_new_part1;
 		} 
 	}
 	if (beta_new < 1e-6f){
