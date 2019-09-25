@@ -270,6 +270,10 @@ static void stabilizerTask(void* param)
 			stateEstimator(&state, &sensorData, &control, tick);
 			compressState();
 
+			// Feed the state in the DD Controller
+			uint64_t feed_t = usecTimestamp();
+			estimatorDDFeedState(state.position.z, state.velocity.z, feed_t);
+
 			commanderGetSetpoint(&setpoint, &state);
 			compressSetpoint();
 

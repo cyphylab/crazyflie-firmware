@@ -81,6 +81,7 @@ static xSemaphoreHandle mutex;
 // Timestamps
 static float timestamp;
 static float timestamp_old;
+static uint64_t us_timestamp_old;
 //static uint64_t timestamp_ctrl;
 
 float dt_ms;
@@ -110,6 +111,7 @@ static float Tracking[] = {1.5f, 0.0, 0.0};
 
 // Control Placeholder
 static float u = 0;
+static float U = 0;
 
 // Land Mode
 static float Land = 0;
@@ -153,9 +155,7 @@ void eval_pseudoinv(arm_matrix_instance_f32* Pseudo) {
 
 // Set the flag
 void set_estimator_ready() {
-	xSemaphoreTake(mutex, portMAX_DELAY);
 	updated = true;
-	xSemaphoreGive(mutex);
 
 	return;
 }
@@ -186,7 +186,7 @@ static void estimate_params() {
 				alpha_new = alpha - (alpha + ctrl_dd * beta) +  1.0f/TotalTime * (X[1] - X_old[1]); 
 				beta = beta;
 				alpha = alpha_new; 
-				u = 41000.0f;
+				u = 41000.0f/65535.0f;
 				estimatorDDSetControl(u);
 				break;
 			case 2:
@@ -235,16 +235,23 @@ static void compute_ctrl() {
 	u_fb = u_p + u_d + u_a;	
 	//alpha=-12.0f;
 	u = (1.0f / beta) * (-alpha + u_fb);
-
+    if (Step == 4){
+        DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
+							(double)alpha, (double)beta, (double)u);
+    }
 	if (u < 0.0f) {
 		u = 0.0f;
 	}
-	if (u > 65535.0f) {
-		u = 65535.0f;
+	if (u > 1.0f) {
+		u = 1.0f;
 	}
     if (!estimate_least_squares){
 	    if (!Land){
     	    estimatorDDSetControl(u);
+             if (Step == 4){
+                DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
+							(double)alpha, (double)beta, (double)u);
+             }
         } else{
             estimatorDDSetControl(0); 
         } 
@@ -341,9 +348,14 @@ void DDEstimator_step_circ(float y, float stamp) {
 
 
 	if (Nmeas >= BUFF_SIZE) {
+		// State Estimation
 		finalize_data();
 		estimate_state();
+
+		// Parameters
 		estimate_params();
+
+		// Control
 		if (ctrl_dd_active && Step > 1) {	
 			compute_ctrl();
 		}
@@ -377,6 +389,23 @@ void DDEstimator_step_batch(float y, float stamp) {
 }
 
 
+void estimatorDDFeedState(float z, float zd, uint64_t us_timestamp) {
+
+	dt_ms = (float)(us_timestamp - us_timestamp_old) / 1e3f;
+	
+	X[0] = z;
+	X[1] = zd;
+	X[2] = 0.0;
+
+	estimate_params();
+
+	if (ctrl_dd_active && Step > 1) {
+		compute_ctrl();
+	}
+
+	set_estimator_ready();
+	
+}
 
 
 // ====================================
@@ -407,7 +436,9 @@ void estimatorDDInit(void) {
 	eval_pseudoinv(&O_invm);
 
 	mutex = xSemaphoreCreateMutex();
-
+    alpha = 0.0f;
+    alpha_new = 0.0f;
+    beta = 1.0f; //2.8577f*1e-4f;
 	// Initialize the DD Library
 	DataDriven_initialize();
 
@@ -465,6 +496,8 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 	return true;
 }
 
+
+
 float estimatorDDGetEstimatedZ() {
 	return state_z;
 }
@@ -488,10 +521,11 @@ bool estimatorDDHasNewEstimate() {
 void estimatorDDSetControl(const float u) {
 	ctrl_ddd=ctrl_dd;
 	ctrl_dd = u;
+    U = u * 65535.0f;
 }
 
 float estimatorDDGetControl() {
-	return ctrl_dd;
+	return U;
 }
 
 void estimatorDDParamLeastSquares(void) {   

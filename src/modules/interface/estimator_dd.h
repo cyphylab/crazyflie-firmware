@@ -20,6 +20,8 @@ float estimatorDDGetEstimatedZ();
 // Get the control computed by the DD
 float estimatorDDGetControl();
 
+// Feed the state into the estimator
+void estimatorDDFeedState(float z, float zd, uint64_t t);
 
 void estimatorDDSetControl(const float v);
 
