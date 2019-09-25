@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include "stabilizer_types.h"
 
+// I should add a structure to clean the interface...
+
 void estimatorDDInit(void);
 
 bool estimatorDDTest(void);
