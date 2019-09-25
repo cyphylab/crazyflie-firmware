@@ -38,12 +38,12 @@ float A[STATE_SIZE * STATE_SIZE] =
 
 // On line i: [1, -sum(ts(k)), 1/2 * (sum(ts(k))^2]
 float O[BUFF_SIZE * STATE_SIZE]; /*{
-	1, 0, 0,
-	1, -TS, 0.5f * TS2,
-	1, -2.0f * TS, 2.0f * TS2,
-	1, -3.0f * TS, 9.0f/2.0f * TS2,
-	1, -4.0f * TS, 8.0f * TS2};
-	*/
+								   1, 0, 0,
+								   1, -TS, 0.5f * TS2,
+								   1, -2.0f * TS, 2.0f * TS2,
+								   1, -3.0f * TS, 9.0f/2.0f * TS2,
+								   1, -4.0f * TS, 8.0f * TS2};
+								   */
 
 // C matrix
 float C[STATE_SIZE] = {1, 0, 0};
@@ -92,9 +92,9 @@ static uint32_t msg_counter = 0;
 // ====================================
 // Estimator State 
 static float state_z;
-static float alpha = 0.0f;
+static float alpha_ = 0.0f;
 static float alpha_new = 0.0f;
-static float beta = 1.0f; //2.8577f*1e-4f;
+static float beta_ = 1.0f; //2.8577f*1e-4f;
 // /droneMass;
 
 // Estimator Parametrs
@@ -105,8 +105,8 @@ static float gamma2 = 1.0f;
 static float P1 = 1.0f;
 static float P2 = 1.0f;
 static float Kdd[3];
-static float ctrl_dd;
-static float ctrl_ddd;
+static float ctrl_dd_;
+static float ctrl_ddd_;
 static float Tracking[] = {1.5f, 0.0, 0.0};
 
 // Control Placeholder
@@ -118,7 +118,7 @@ static float Land = 0;
 
 
 // Step Counter
-static int Step = 3;
+static int Step = 40;
 static bool ctrl_dd_active = false;
 static bool estimate_least_squares = false;
 static bool updated = false;
@@ -174,42 +174,92 @@ static void estimate_state() {
 }
 
 
+// =============================================
+// Getters and Setters
+static float estimatorDD_getAlpha_() {
+	return alpha_;
+}
+
+static void estimatorDD_setAlpha_(float a) {
+	alpha_ = a;
+}
+
+static float estimatorDD_getBeta_() {
+	return beta_;
+}
+
+static void estimatorDD_setBeta_(float b) {
+	beta_ = b;
+}
+
+static float estimatorDD_getCtrl_dd_() {
+	return ctrl_dd_;
+}
+
+static float estimatorDD_getCtrl_ddd_() {
+	return ctrl_ddd_;
+}
+
+
 /**
  * Estimate params
  */
-static void estimate_params(float TotalTime) {
-	if (ctrl_dd_active) {
-		Step++;
-		switch (Step) {
-			case 1:
-                estimate_least_squares = true;
-				alpha_new = alpha - (alpha + ctrl_dd * beta) +  1.0f/TotalTime * (X[1] - X_old[1]); 
-				beta = beta;
-				alpha = alpha_new; 
-				u = 41000.0f/65535.0f;
-				estimatorDDSetControl(u);
-				break;
-			case 2:
-				alpha_new = alpha + ctrl_ddd / (TotalTime * (ctrl_ddd - ctrl_dd))* ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd * beta)); 
-				beta = beta + ctrl_ddd / (TotalTime * (ctrl_dd - ctrl_ddd)) * ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd * beta));
-				alpha = alpha_new;
-                estimate_least_squares = false;
-				break;  
-			default:
-				alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-				beta = beta - gamma2 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma2 * ctrl_dd* (X[1] - X_old[1]);
-				alpha = alpha_new;
-				break;  
+static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
+	
+	// Get the current value from the global variables
+	float alpha = estimatorDD_getAlpha_();
+	float beta = estimatorDD_getBeta_();
+
+	// Local variables
+	float alpha_new = alpha;
+	float beta_new = beta;
+
+
+	float ctrl_dd_scaled = c_dd / 65535.0f;
+	float ctrl_ddd_scaled = c_ddd / 65535.0f;
+	
+	if (c_dd > 1.0f){
+		if (ctrl_dd_active) {
+			switch (Step) {
+				case 1:
+					estimate_least_squares = false;
+					alpha_new = alpha - (alpha + ctrl_dd_scaled * beta) +  1.0f/TotalTime * (X[1] - X_old[1]); 
+					beta_new = beta;
+					//u = 41000.0f/65535.0f;
+					//estimatorDDSetControl(u);
+					Step++;
+					break;
+				case 2:
+					alpha_new = alpha + ctrl_ddd_scaled / (TotalTime * (ctrl_ddd_scaled - ctrl_dd_scaled))* ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta)); 
+					beta_new = beta + ctrl_ddd_scaled / (TotalTime * (ctrl_dd_scaled - ctrl_ddd_scaled)) * ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta));
+					estimate_least_squares = false;
+					Step++;
+					break;  
+				default:
+					alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd_scaled * beta) +  gamma1 * (X[1] - X_old[1]);
+					beta_new = beta - gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta) +  gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
+					break;  
+			}
 		}
+		else {
+			alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd_scaled * beta) +  gamma1 * (X[1] - X_old[1]);
+			beta_new = beta - gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta) +  gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
+		} 
 	}
-	else {
-		alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd * beta) +  gamma1 * (X[1] - X_old[1]);
-		beta = beta - gamma2 * ctrl_dd * TotalTime * (alpha + ctrl_dd * beta) +  gamma2 * ctrl_dd* (X[1] - X_old[1]);
-		alpha = alpha_new; 
+	if (beta_new < 1e-6f){
+		beta_new = 1e-6f;
 	}
-	if (beta<1e-6f){
-		beta = 1e-6f;
+	Step++;
+	if (Step == 1000){
+		DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
+				(double)alpha_new, (double)beta_new, (double)ctrl_dd_scaled);
+		Step=4;  
 	}
+
+	// Update the state
+	estimatorDD_setAlpha_(alpha_new);
+	estimatorDD_setBeta_(beta_new);
+
 	return;
 }
 
@@ -223,6 +273,9 @@ static float u_a;
 static void compute_ctrl() {
 	float u_fb = 0;
 
+	float alpha = estimatorDD_getAlpha_();
+	float beta = estimatorDD_getBeta_();
+
 	// Update the control gain
 	Kdd[0] = - P1 * P2;
 	Kdd[1] = P1 + P2;
@@ -235,27 +288,28 @@ static void compute_ctrl() {
 	u_fb = u_p + u_d + u_a;	
 	//alpha=-12.0f;
 	u = (1.0f / beta) * (-alpha + u_fb);
-    if (Step == 4){
-        DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
-							(double)alpha, (double)beta, (double)u);
-    }
+	if (Step == 4){
+		DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
+				(double)alpha, (double)beta, (double)u);
+	}
 	if (u < 0.0f) {
 		u = 0.0f;
 	}
 	if (u > 1.0f) {
 		u = 1.0f;
 	}
-    if (!estimate_least_squares){
-	    if (!Land){
-    	    estimatorDDSetControl(u);
-             if (Step == 4){
-                DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
-							(double)alpha, (double)beta, (double)u);
-             }
-        } else{
-            estimatorDDSetControl(0); 
-        } 
-    }
+	U = u * 65535.0f;
+	if (!estimate_least_squares){
+		if (!Land){
+			estimatorDDSetControl(U);
+			if (Step == 4){
+				DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
+						(double)alpha, (double)beta, (double)u);
+			}
+		} else{
+			estimatorDDSetControl(0.0); 
+		} 
+	}
 }
 
 /** 
@@ -300,26 +354,26 @@ static void finalize_data() {
 	//TotalTime = DTbuff[BUFF_SIZE-1];
 	TotalTime = DTbuff[4];
 
-    
+
 	// Update the Observability matrix
 	update_O(DTbuff); 
-	
+
 	// Update the pseduoinverse matrix
 	// TODO: Either make everything static with void calls,
 	// 	either pass the values inside all the chain of calls
 	eval_pseudoinv(&O_invm);
 
 	/*
-	static int counter = 0;
-	if (counter == 150) {
-			DEBUG_PRINT("[ %.3f, %.3f, %.3f, %.3f , %.3f, %.3f, %.3f]\n", 
-							(double)*O_invm.pData, (double)*(O_invm.pData + 1), (double)*(O_invm.pData + 2), 
-							(double)*(O_invm.pData + 3), (double)*(O_invm.pData + 4), (double)*(O_invm.pData + 5),
-							(double)*(O_invm.pData + 6));
-			counter = 0;
-	}
-	counter++;
-	*/
+	   static int counter = 0;
+	   if (counter == 150) {
+	   DEBUG_PRINT("[ %.3f, %.3f, %.3f, %.3f , %.3f, %.3f, %.3f]\n", 
+	   (double)*O_invm.pData, (double)*(O_invm.pData + 1), (double)*(O_invm.pData + 2), 
+	   (double)*(O_invm.pData + 3), (double)*(O_invm.pData + 4), (double)*(O_invm.pData + 5),
+	   (double)*(O_invm.pData + 6));
+	   counter = 0;
+	   }
+	   counter++;
+	   */
 }
 
 /**
@@ -352,8 +406,10 @@ void DDEstimator_step_circ(float y, float stamp) {
 		finalize_data();
 		estimate_state();
 
-		// Parameters
-		estimate_params(TotalTime);
+		// Estimate Parameters
+		float cdd = estimatorDD_getCtrl_dd_();
+		float cddd = estimatorDD_getCtrl_ddd_();
+		estimate_params(TotalTime, cdd, cddd);
 
 		// Control
 		if (ctrl_dd_active && Step > 1) {	
@@ -380,7 +436,12 @@ void DDEstimator_step_batch(float y, float stamp) {
 		finalize_data();
 
 		estimate_state();
-		estimate_params(TotalTime);
+		
+		// Estimate Parameters
+		float cdd = estimatorDD_getCtrl_dd_();
+		float cddd = estimatorDD_getCtrl_ddd_();
+		estimate_params(TotalTime, cdd, cddd);
+
 		if (ctrl_dd_active && Step > 1) {	
 			compute_ctrl();
 		}
@@ -400,8 +461,13 @@ void DDEstimator_step_batch(float y, float stamp) {
 void estimatorDDFeedState(float z, float zd, uint64_t us_timestamp) {
 
 	// Measure the time to check whether the trigger is really periodic
+
 	dt_ms = (float)(us_timestamp - us_timestamp_old) / 1e3f;
-	
+	us_timestamp_old = us_timestamp;
+	for (int i = 0; i < 3; i++) {
+		X_old[i] = X[i];
+	}
+
 	X[0] = z;
 	X[1] = zd;
 	X[2] = 0.0;
@@ -409,15 +475,19 @@ void estimatorDDFeedState(float z, float zd, uint64_t us_timestamp) {
 	// The main loop is supposed to spin at 1Khz. Clearly, the information from the Z
 	// is not only provided by the camera, but takes into account the filter prediction
 	// capabilities.
-	float T = 5 * 0.01;
-	estimate_params(T);
+	float T = dt_ms;
+
+	// Estimate Parameters
+	float cdd = estimatorDD_getCtrl_dd_();
+	float cddd = estimatorDD_getCtrl_ddd_();
+	estimate_params(T, cdd, cddd);
 
 	if (ctrl_dd_active && Step > 1) {
 		compute_ctrl();
 	}
 
 	set_estimator_ready();
-	
+
 }
 
 
@@ -449,9 +519,9 @@ void estimatorDDInit(void) {
 	eval_pseudoinv(&O_invm);
 
 	mutex = xSemaphoreCreateMutex();
-    alpha = 0.0f;
-    alpha_new = 0.0f;
-    beta = 1.0f; //2.8577f*1e-4f;
+	alpha_ = 0.0f;
+	alpha_new = 0.0f;
+	beta_ = 1.0f; //2.8577f*1e-4f;
 	// Initialize the DD Library
 	DataDriven_initialize();
 
@@ -532,13 +602,12 @@ bool estimatorDDHasNewEstimate() {
 }
 
 void estimatorDDSetControl(const float u) {
-	ctrl_ddd=ctrl_dd;
-	ctrl_dd = u;
-    U = u * 65535.0f;
+	ctrl_ddd_ = ctrl_dd_;
+	ctrl_dd_ = u;
 }
 
 float estimatorDDGetControl() {
-	return U;
+	return ctrl_dd_;
 }
 
 void estimatorDDParamLeastSquares(void) {   
@@ -553,8 +622,8 @@ void estimatorDDParamLeastSquares(void) {
 	LOG_ADD(LOG_FLOAT, est_x, &X[0])
 	LOG_ADD(LOG_FLOAT, est_xd, &X[1])
 	LOG_ADD(LOG_FLOAT, est_xdd, &X[2])
-	LOG_ADD(LOG_FLOAT, est_alpha, &alpha)
-	LOG_ADD(LOG_FLOAT, est_beta, &beta)
+	LOG_ADD(LOG_FLOAT, est_alpha, &alpha_)
+	LOG_ADD(LOG_FLOAT, est_beta, &beta_)
 	LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
 	LOG_ADD(LOG_FLOAT, est_dt_s, &TotalTime)
 LOG_GROUP_STOP(estimator_dd)
@@ -568,10 +637,10 @@ LOG_GROUP_STOP(estimator_dd)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP1, &P1)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP2, &P2)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddg1, &gamma1)
-    PARAM_ADD(PARAM_FLOAT, ctrl_ddg2, &gamma2)  
-	PARAM_ADD(PARAM_FLOAT, ctrl_ddA, &alpha)
-    PARAM_ADD(PARAM_FLOAT, ctrl_ddB, &beta)   
-    PARAM_ADD(PARAM_FLOAT, ctrl_ddTr, &Tracking[0])
-    PARAM_ADD(PARAM_FLOAT, ctrl_ddLd, &Land)
+	PARAM_ADD(PARAM_FLOAT, ctrl_ddg2, &gamma2)  
+	PARAM_ADD(PARAM_FLOAT, ctrl_ddA, &alpha_)
+	PARAM_ADD(PARAM_FLOAT, ctrl_ddB, &beta_)   
+	PARAM_ADD(PARAM_FLOAT, ctrl_ddTr, &Tracking[0])
+	PARAM_ADD(PARAM_FLOAT, ctrl_ddLd, &Land)
 PARAM_GROUP_STOP(controller_dd)
 
