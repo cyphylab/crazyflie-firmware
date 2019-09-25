@@ -177,7 +177,7 @@ static void estimate_state() {
 /**
  * Estimate params
  */
-static void estimate_params() {
+static void estimate_params(float TotalTime) {
 	if (ctrl_dd_active) {
 		Step++;
 		switch (Step) {
@@ -353,7 +353,7 @@ void DDEstimator_step_circ(float y, float stamp) {
 		estimate_state();
 
 		// Parameters
-		estimate_params();
+		estimate_params(TotalTime);
 
 		// Control
 		if (ctrl_dd_active && Step > 1) {	
@@ -380,7 +380,7 @@ void DDEstimator_step_batch(float y, float stamp) {
 		finalize_data();
 
 		estimate_state();
-		estimate_params();
+		estimate_params(TotalTime);
 		if (ctrl_dd_active && Step > 1) {	
 			compute_ctrl();
 		}
@@ -389,15 +389,28 @@ void DDEstimator_step_batch(float y, float stamp) {
 }
 
 
+/**
+ * Feed the DD controller with the state estimate.
+ * (It will be necessary to disable the callback from the sensor to avoid
+ * overlapping the estimation (and race conditions on the variables)
+ *
+ * If this is a feature that would be embedded in the final version we 
+ * can work on a logic for all these workarounds...
+ */
 void estimatorDDFeedState(float z, float zd, uint64_t us_timestamp) {
 
+	// Measure the time to check whether the trigger is really periodic
 	dt_ms = (float)(us_timestamp - us_timestamp_old) / 1e3f;
 	
 	X[0] = z;
 	X[1] = zd;
 	X[2] = 0.0;
 
-	estimate_params();
+	// The main loop is supposed to spin at 1Khz. Clearly, the information from the Z
+	// is not only provided by the camera, but takes into account the filter prediction
+	// capabilities.
+	float T = 5 * 0.01;
+	estimate_params(T);
 
 	if (ctrl_dd_active && Step > 1) {
 		compute_ctrl();
