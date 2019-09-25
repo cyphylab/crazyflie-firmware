@@ -94,7 +94,7 @@ static uint32_t msg_counter = 0;
 static float state_z;
 static float alpha_ = 0.0f;
 static float alpha_new = 0.0f;
-static float beta_ = 1.0f; //2.8577f*1e-4f;
+static float beta_ = 2.8577f*1e-4f;
 // /droneMass;
 
 // Estimator Parametrs
@@ -230,13 +230,13 @@ static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 					break;
 				case 2:
 					alpha_new = alpha + ctrl_ddd_scaled / (TotalTime * (ctrl_ddd_scaled - ctrl_dd_scaled))* ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta)); 
-					beta_new = beta + 1.0f / (TotalTime * (ctrl_dd_scaled - ctrl_ddd_scaled)) * ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta));
+					beta_new = beta + 1 / (TotalTime * (ctrl_dd_scaled - ctrl_ddd_scaled)) * ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta));
 					estimate_least_squares = false;
 					Step++;
 					break;  
 				default:
 					alpha_new = alpha + gamma1 * ((X[1] - X_old[1])- TotalTime * (alpha + ctrl_dd_scaled * beta));
-					beta_new = beta + gamma2 * ctrl_dd_scaled * ((X[1] - X_old[1])- TotalTime * (alpha + ctrl_dd_scaled * beta));
+					//beta_new = beta + gamma2 * ctrl_dd_scaled * ((X[1] - X_old[1])- TotalTime * (alpha + ctrl_dd_scaled * beta));
 					break;  
 			}
 		}
@@ -245,20 +245,17 @@ static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 			float a_new_part1 =  gamma1 * (X[1] - X_old[1]);
 			alpha_new = alpha - a_new_part0  +  a_new_part1;
 
-			float b_new_part0 = gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta);
-			float b_new_part1 = gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
-			beta_new = beta - b_new_part0 +  b_new_part1;
+			//float b_new_part0 = gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta);
+			//float b_new_part1 = gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
+			//beta_new = beta - b_new_part0 +  b_new_part1;
 		} 
 	}
 	if (beta_new < 1e-6f){
 		beta_new = 1e-6f;
 	}
-    if (beta_new > 1e6f){
-		beta_new = 1e6f;
-	}
 	Step++;
-	if (Step == 1000){
-		DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
+	if (Step == 3000){
+		DEBUG_PRINT("Input PID [ %.3f, %.3f, %.3f]\n", 
 				(double)alpha_new, (double)beta_new, (double)ctrl_dd_scaled);
 		Step=4;  
 	}
@@ -295,16 +292,17 @@ static void compute_ctrl() {
 	u_fb = u_p + u_d + u_a;	
 	//alpha=-12.0f;
 	u = (1.0f / beta) * (-alpha + u_fb);
-	if (Step == 4){
-		DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
-				(double)alpha, (double)beta, (double)u);
-	}
+
 	if (u < 0.0f) {
 		u = 0.0f;
 	}
 	if (u > 1.0f) {
 		u = 1.0f;
 	}
+    //if (Step == 4){
+	//	DEBUG_PRINT("Input DD [ %.6f, %.6f, %.6f]\n", 
+	//			(double)alpha, (double)beta, (double)u);
+	//}
 	U = u * 65535.0f;
 	if (!estimate_least_squares){
 		if (!Land){
@@ -528,7 +526,7 @@ void estimatorDDInit(void) {
 	mutex = xSemaphoreCreateMutex();
 	alpha_ = 0.0f;
 	alpha_new = 0.0f;
-	beta_ = 1.0f; //2.8577f*1e-4f;
+	beta_ = 18.7291;
 	// Initialize the DD Library
 	DataDriven_initialize();
 
