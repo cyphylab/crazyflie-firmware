@@ -118,7 +118,7 @@ static float Land = 0;
 
 
 // Step Counter
-static int Step = 40;
+static int Step = 4.0f;
 static bool ctrl_dd_active = false;
 static bool estimate_least_squares = false;
 static bool updated = false;
@@ -222,7 +222,7 @@ static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 			switch (Step) {
 				case 1:
 					estimate_least_squares = false;
-					alpha_new = alpha - (alpha + ctrl_dd_scaled * beta) +  1.0f/TotalTime * (X[1] - X_old[1]); 
+					alpha_new = alpha + 1.0f/TotalTime * (X[1] - X_old[1])- (alpha + ctrl_dd_scaled * beta); 
 					beta_new = beta;
 					//u = 41000.0f/65535.0f;
 					//estimatorDDSetControl(u);
@@ -230,13 +230,13 @@ static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 					break;
 				case 2:
 					alpha_new = alpha + ctrl_ddd_scaled / (TotalTime * (ctrl_ddd_scaled - ctrl_dd_scaled))* ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta)); 
-					beta_new = beta + ctrl_ddd_scaled / (TotalTime * (ctrl_dd_scaled - ctrl_ddd_scaled)) * ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta));
+					beta_new = beta + 1.0f / (TotalTime * (ctrl_dd_scaled - ctrl_ddd_scaled)) * ((X[1] - X_old[1]) - TotalTime * (alpha + ctrl_dd_scaled * beta));
 					estimate_least_squares = false;
 					Step++;
 					break;  
 				default:
-					alpha_new = alpha - gamma1 * (TotalTime) * (alpha + ctrl_dd_scaled * beta) +  gamma1 * (X[1] - X_old[1]);
-					beta_new = beta - gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta) +  gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
+					alpha_new = alpha + gamma1 * ((X[1] - X_old[1])- TotalTime * (alpha + ctrl_dd_scaled * beta));
+					beta_new = beta + gamma2 * ctrl_dd_scaled * ((X[1] - X_old[1])- TotalTime * (alpha + ctrl_dd_scaled * beta));
 					break;  
 			}
 		}
@@ -252,6 +252,9 @@ static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 	}
 	if (beta_new < 1e-6f){
 		beta_new = 1e-6f;
+	}
+    if (beta_new > 1e6f){
+		beta_new = 1e6f;
 	}
 	Step++;
 	if (Step == 1000){
@@ -466,7 +469,7 @@ void estimatorDDFeedState(float z, float zd, uint64_t us_timestamp) {
 
 	// Measure the time to check whether the trigger is really periodic
 
-	dt_ms = (float)(us_timestamp - us_timestamp_old) / 1e3f;
+	dt_ms = (float)(us_timestamp - us_timestamp_old) / 1e6f;
 	us_timestamp_old = us_timestamp;
 	for (int i = 0; i < 3; i++) {
 		X_old[i] = X[i];
