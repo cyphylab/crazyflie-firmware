@@ -565,7 +565,7 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 	state_z = pos->z;
 
 	// Do something with the new measurement 
-	DDEstimator_step_batch(state_z, t_s);
+	DDEstimator_step_circ(state_z, t_s);
 
 	//	if (msg_counter == 1000) {
 	//		DEBUG_PRINT("\n");
