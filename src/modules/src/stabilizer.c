@@ -271,8 +271,8 @@ static void stabilizerTask(void* param)
 			compressState();
 
 			// Feed the state in the DD Controller
-			uint64_t feed_t = usecTimestamp();
-			estimatorDDFeedState(state.position.z, state.velocity.z, feed_t);
+			//uint64_t feed_t = usecTimestamp();
+			//estimatorDDFeedState(state.position.z, state.velocity.z, feed_t);
 
 			commanderGetSetpoint(&setpoint, &state);
 			compressSetpoint();

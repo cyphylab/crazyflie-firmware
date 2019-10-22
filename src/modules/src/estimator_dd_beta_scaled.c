@@ -57,7 +57,6 @@ float O_inv[STATE_SIZE * BUFF_SIZE];
 static float Ybuff[BUFF_SIZE];
 static float X[STATE_SIZE];
 static float X_old[3];
-static float X_old_old[3];
 
 static float Tbuff[BUFF_SIZE];
 static float DTbuff[BUFF_SIZE];
@@ -94,15 +93,12 @@ static uint32_t msg_counter = 0;
 // Estimator State 
 static float state_z;
 static float alpha_ = 0.0f;
-static float alpha_1 = 0.0f;
-static float alpha_2 = 0.0f;
+static float alpha_new = 0.0f;
 static float beta_ = 1.0f;
-static float beta_1 = 1.0f;
-static float beta_2 = 1.0f;
 // /droneMass;
 
 // Estimator Parametrs
-static float gamma1 = 0.0f;
+static float gamma1 = 1.0f;
 static float gamma2 = 0.0f;
 
 // Control gain
@@ -120,14 +116,10 @@ static float U = 0;
 // Land Mode
 static float Land = 0;
 
-// Time Buffers
-static float TotalTime_2 = 1.0f;
-static float TotalTime_1 = 1.0f;
-static float TotalTime = 1.0f;
 
 // Step Counter
 static int Step = 4;
-static int StepLS = 0;
+static int StepLS = 1;
 static bool ctrl_dd_active = false;
 static bool updated = false;
 
@@ -155,43 +147,8 @@ void eval_pseudoinv(arm_matrix_instance_f32* Pseudo) {
 	arm_mat_mult_f32(&TempNxNx2m, &TempNxNym, Pseudo);
 }
 
-// =============================================
-// Getters and Setters
-static float estimatorDD_getAlpha_() {
-	return alpha_;
-}
 
-static float estimatorDD_getAlpha_2() {
-	return alpha_2;
-}
 
-static void estimatorDD_setAlpha_(float a) {
-    alpha_2 = alpha_1;
-    alpha_1 = alpha_;
-	alpha_ = a;
-}
-
-static float estimatorDD_getBeta_() {
-	return beta_;
-}
-
-static float estimatorDD_getBeta_2() {
-	return beta_2;
-}
-
-static void estimatorDD_setBeta_(float b) {
-	beta_2 = beta_1;
-	beta_1 = beta_;
-	beta_ = b;
-}
-
-static float estimatorDD_getCtrl_dd_() {
-	return ctrl_dd_;
-}
-
-static float estimatorDD_getCtrl_ddd_() {
-	return ctrl_ddd_;
-}
 
 // ===================================
 // Estimator methods
@@ -209,7 +166,6 @@ void set_estimator_ready() {
 static void estimate_state() {
 	// Save the old state before the update
 	for (int i = 0; i < 3; i++) {
-        X_old_old[i] = X_old[i];
 		X_old[i] = X[i];
 	}
 
@@ -218,72 +174,105 @@ static void estimate_state() {
 }
 
 
+// =============================================
+// Getters and Setters
+static float estimatorDD_getAlpha_() {
+	return alpha_;
+}
+
+static void estimatorDD_setAlpha_(float a) {
+	alpha_ = a;
+}
+
+static float estimatorDD_getBeta_() {
+	return beta_;
+}
+
+static void estimatorDD_setBeta_(float b) {
+	beta_ = b;
+}
+
+static float estimatorDD_getCtrl_dd_() {
+	return ctrl_dd_;
+}
+
+static float estimatorDD_getCtrl_ddd_() {
+	return ctrl_ddd_;
+}
 
 
 /**
  * Estimate params
  */
-static void estimate_params(float TotalTime,float TotalTime_1,float TotalTime_2, float c_dd, float c_ddd) {
+static void estimate_params(float TotalTime, float c_dd, float c_ddd) {
 	
 	// Get the current value from the global variables
 	float alpha = estimatorDD_getAlpha_();
 	float beta = estimatorDD_getBeta_();
-    float alpha_2 = estimatorDD_getAlpha_2();
-	float beta_2 = estimatorDD_getBeta_2();
-    
+
 	// Local variables
-	float alpha_new = 0.0f;
-	float beta_new = 0.0f;
-	float alpha_new_1 = 0.0f;
-	float beta_new_1 = 0.0f;
-    
+	float alpha_new = alpha;
+	float beta_new = beta;
+
 	float ctrl_dd_scaled = c_dd / 65535.0f;
 	float ctrl_ddd_scaled = c_ddd / 65535.0f;
 	float threshold = (ctrl_dd_scaled - ctrl_ddd_scaled);
-    float diff_1 = (X[1] - X_old[1]);
-    float diff_2 = (X_old[1] - X_old_old[1]);
+    float diff = (X[1] - X_old[1]);
     if (threshold < 0.0f){
         threshold = -threshold;
     }
-	if (threshold > 0.25f && StepLS >= 5){
-        StepLS = 0;
-		DEBUG_PRINT("Input 11 [ %.3f, %.3f, %.6f, %.6f]\n", 
-				(double)alpha_2, (double)beta_2, (double)(TotalTime_1), (double)TotalTime_2);
-		alpha_new_1 = alpha_2 + 1.0f/TotalTime_2 * (diff_2)- (alpha_2 + ctrl_ddd_scaled * beta_2); 
-	    beta_new_1 = beta_2;
-        DEBUG_PRINT("Input 12 [ %.3f, %.3f, %.6f, %.6f]\n", 
-			    (double)alpha_new_1, (double)beta_new_1, (double)ctrl_dd_scaled, (double)ctrl_ddd_scaled);
-		alpha_new = alpha_new_1 + ctrl_ddd_scaled / ((ctrl_ddd_scaled - ctrl_dd_scaled))* (diff_1 / TotalTime_1  - (alpha_new_1 + ctrl_dd_scaled * beta_new_1)); 
-		beta_new = beta_new_1 + 1.0f / ((ctrl_dd_scaled - ctrl_ddd_scaled)) * (diff_1 / TotalTime_1 - (alpha_new_1 + ctrl_dd_scaled * beta_new_1));
-        DEBUG_PRINT("Input 13 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);
+	if ((threshold > 0.30f || StepLS == 2) && StepLS != 3) {
+		switch (StepLS) {
+			case 1:
+                DEBUG_PRINT("Input 11 [ %.3f, %.3f, %.6f, %.6f, %.6f]\n", 
+				        (double)alpha_new, (double)beta_new, (double)ctrl_dd_scaled, (double)(1.0f/TotalTime), (double)diff);
+				StepLS = 2;
+				alpha_new = alpha + 1.0f/TotalTime * (X[1] - X_old[1])- (alpha + ctrl_dd_scaled * beta); 
+			    beta_new = beta;
+                DEBUG_PRINT("Input 12 [ %.3f, %.3f, %.3f, %.6f, %.6f]\n", 
+				        (double)alpha_new, (double)beta_new, (double)ctrl_dd_scaled, (double)TotalTime, (double)diff);
+                if (ctrl_dd_scaled<0.5f){
+    			    estimatorDDSetControl(0.8f*65535.0f);
+                } else{
+                    estimatorDDSetControl(0.2f*65535.0f);
+                }               
+			break;
+			case 2:
+                DEBUG_PRINT("Input 21 [ %.3f, %.3f, %.6f, %.6f]\n", 
+				        (double)alpha_new, (double)beta_new, (double)threshold , (double)ctrl_ddd_scaled );
+				alpha_new = alpha + ctrl_ddd_scaled / ((ctrl_ddd_scaled - ctrl_dd_scaled))* ((X[1] - X_old[1]) / TotalTime  - (alpha + ctrl_dd_scaled * beta)); 
+				beta_new = beta + 1.0f / ((ctrl_dd_scaled - ctrl_ddd_scaled)) * ((X[1] - X_old[1]) / TotalTime - (alpha + ctrl_dd_scaled * beta));
+				StepLS = 3;
+                DEBUG_PRINT("Input 22 [ %.3f, %.3f, %.6f]\n", 
+				       (double)alpha_new, (double)beta_new, (double)((X[1] - X_old[1])/TotalTime) );
+				break;  
+			default:
+				alpha_new = alpha + gamma1 * ((X[1] - X_old[1])- TotalTime * (alpha + ctrl_dd_scaled * beta));
+				beta_new = beta + gamma2 * ctrl_dd_scaled * ((X[1] - X_old[1])- TotalTime * (alpha + ctrl_dd_scaled * beta));
+				break;  
+		}
 	}
 	else {
-        StepLS++;
+        StepLS = 1;
 		float a_new_part0 = gamma1 * TotalTime * (alpha + ctrl_dd_scaled * beta);
-		float a_new_part1 =  gamma1 * (diff_1);
+		float a_new_part1 =  gamma1 * (X[1] - X_old[1]);
 		alpha_new = alpha - a_new_part0  +  a_new_part1;
 
 		float b_new_part0 = gamma2 * ctrl_dd_scaled * TotalTime * (alpha + ctrl_dd_scaled * beta);
-		float b_new_part1 = gamma2 * ctrl_dd_scaled * (diff_1);
+		float b_new_part1 = gamma2 * ctrl_dd_scaled * (X[1] - X_old[1]);
 		beta_new = beta - b_new_part0 +  b_new_part1;
 	} 
-	if (beta_new < 3.0f){
-		beta_new = 3.0f;
-        alpha_new = -2.0f;
-    DEBUG_PRINT("Input 14 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);
-	}
-    if (beta_new > 30.0f){
-		beta_new = 30.0f;
-        alpha_new = -20.0f;
-    DEBUG_PRINT("Input 15 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);
+	if (beta_new < 1.0f){
+		beta_new = 1.0f;
+        alpha_new = -0.7f;
 	}
 	Step++;
-	if (Step == 200){
-		DEBUG_PRINT("Alpha Beta  [ %.3f, %.3f, %.3f]\n", 
-				(double)alpha_new, (double)beta_new, (double)gamma1);
+	if (Step == 3000){
+		DEBUG_PRINT("Input [ %.3f, %.3f, %.3f]\n", 
+				(double)alpha_new, (double)beta_new, (double)ctrl_dd_scaled);
 		Step=4;  
 	}
-   
+
 	// Update the state
 	estimatorDD_setAlpha_(alpha_new);
 	estimatorDD_setBeta_(beta_new);
@@ -292,22 +281,18 @@ static void estimate_params(float TotalTime,float TotalTime_1,float TotalTime_2,
 }
 
 
-
-
-
+/**
+ * Compute control value
+ */
+static float u_p;
+static float u_d;
+static float u_a;
 static void compute_ctrl() {
-    /**
-    * Compute control value
-    */
-    float u_fb = 0;
-    static float u_p;
-    static float u_d;
-    static float u_a;
+	float u_fb = 0;
+
 	float alpha = estimatorDD_getAlpha_();
 	float beta = estimatorDD_getBeta_();
-    if (X[0]>1.8f){
-    Land=1;
-    }
+
 	// Update the control gain
 	Kdd[0] = - P1 * P2;
 	Kdd[1] = P1 + P2;
@@ -332,15 +317,17 @@ static void compute_ctrl() {
 	//			(double)alpha, (double)beta, (double)u);
 	//}
 	U = u * 65535.0f;   
-     if (!Land){
-	   estimatorDDSetControl(U);
-	   if (Step == 4){
+    if (StepLS != 2){
+        if (!Land){
+		    estimatorDDSetControl(U);
+		    if (Step == 4){
 			    DEBUG_PRINT("[ %.6f, %.6f, %.6f]\n", 
 						    (double)alpha, (double)beta, (double)u);
 		    }
-	 } else{
+	    } else{
 		    estimatorDDSetControl(0.0); 
-	 } 
+	    } 
+	}
 }
 
 /** 
@@ -357,9 +344,9 @@ static void insert_newmeas_batch(float y, float stamp, int k) {
 
 static void insert_newmeas_circ(float y, float stamp) {
 
-	for (int index = 1; index < BUFF_SIZE; index++) { 
-		Ybuff[BUFF_SIZE-index] = Ybuff[BUFF_SIZE-index-1];
-		Tbuff[BUFF_SIZE-index] = Tbuff[BUFF_SIZE-index-1];       
+	for (int index = BUFF_SIZE-1; index > 0; index--) { 
+		Ybuff[index] = Ybuff[index-1];
+		Tbuff[index] = Tbuff[index-1];       
 	}
 	Ybuff[0] = y;
 	Tbuff[0] = stamp;
@@ -374,7 +361,7 @@ static void update_O(float t[BUFF_SIZE]) {
 }
 
 
-static void finalize_data_circ() {
+static void finalize_data() {
 
 	// Finalize the DT vector, computing the differences
 	// [0, dt1, dt1 + dt2, ...]
@@ -383,43 +370,6 @@ static void finalize_data_circ() {
 		DTbuff[i] = Tbuff[0] - Tbuff[i];
 	}
 	//TotalTime = DTbuff[BUFF_SIZE-1];
-    TotalTime_2 = TotalTime_1;
-    TotalTime_1 = TotalTime;
-	TotalTime = DTbuff[1];
-
-
-	// Update the Observability matrix
-	update_O(DTbuff); 
-
-	// Update the pseduoinverse matrix
-	// TODO: Either make everything static with void calls,
-	// 	either pass the values inside all the chain of calls
-	eval_pseudoinv(&O_invm);
-
-	/*
-	   static int counter = 0;
-	   if (counter == 150) {
-	   DEBUG_PRINT("[ %.3f, %.3f, %.3f, %.3f , %.3f, %.3f, %.3f]\n", 
-	   (double)*O_invm.pData, (double)*(O_invm.pData + 1), (double)*(O_invm.pData + 2), 
-	   (double)*(O_invm.pData + 3), (double)*(O_invm.pData + 4), (double)*(O_invm.pData + 5),
-	   (double)*(O_invm.pData + 6));
-	   counter = 0;
-	   }
-	   counter++;
-	   */
-}
-
-static void finalize_data_batch() {
-
-	// Finalize the DT vector, computing the differences
-	// [0, dt1, dt1 + dt2, ...]
-	DTbuff[0] = Tbuff[0];
-	for (int i = 0; i < BUFF_SIZE; i++) {
-		DTbuff[i] = Tbuff[0] - Tbuff[i];
-	}
-	//TotalTime = DTbuff[BUFF_SIZE-1];
-    TotalTime_2 = TotalTime_1;
-    TotalTime_1 = TotalTime;
 	TotalTime = DTbuff[4];
 
 
@@ -443,6 +393,7 @@ static void finalize_data_batch() {
 	   counter++;
 	   */
 }
+
 /**
  * Estimator step function
  */
@@ -465,21 +416,19 @@ void DDEstimator_step_circ(float y, float stamp) {
 
 
 	// Update the buffer
-
 	insert_newmeas_circ(y, stamp);
 
 
 	if (Nmeas >= BUFF_SIZE) {
 		// State Estimation
-		finalize_data_circ();
-
+		finalize_data();
 		estimate_state();
-        
+
 		// Estimate Parameters
 		float cdd = estimatorDD_getCtrl_dd_();
 		float cddd = estimatorDD_getCtrl_ddd_();
-		estimate_params(TotalTime, TotalTime_1, TotalTime_2, cdd, cddd);
-       
+		estimate_params(TotalTime, cdd, cddd);
+
 		// Control
 		if (ctrl_dd_active && Step > 1) {	
 			compute_ctrl();
@@ -502,14 +451,14 @@ void DDEstimator_step_batch(float y, float stamp) {
 
 	if (Nmeas == BUFF_SIZE) {
 		Nmeas = 0;
-		finalize_data_batch();
+		finalize_data();
 
 		estimate_state();
 		
 		// Estimate Parameters
 		float cdd = estimatorDD_getCtrl_dd_();
 		float cddd = estimatorDD_getCtrl_ddd_();
-		estimate_params(TotalTime, TotalTime_1, TotalTime_2, cdd, cddd);
+		estimate_params(TotalTime, cdd, cddd);
 
 		if (ctrl_dd_active && Step > 1) {	
 			compute_ctrl();
@@ -544,13 +493,12 @@ void estimatorDDFeedState(float z, float zd, uint64_t us_timestamp) {
 	// The main loop is supposed to spin at 1Khz. Clearly, the information from the Z
 	// is not only provided by the camera, but takes into account the filter prediction
 	// capabilities.
-    TotalTime_2 = TotalTime_1;
-    TotalTime_1 = TotalTime;
-	TotalTime = dt_ms;
+	float T = dt_ms;
+
 	// Estimate Parameters
 	float cdd = estimatorDD_getCtrl_dd_();
 	float cddd = estimatorDD_getCtrl_ddd_();
-	estimate_params(TotalTime, TotalTime_1, TotalTime_2, cdd, cddd);
+	estimate_params(T, cdd, cddd);
 
 	if (ctrl_dd_active && Step > 1) {
 		compute_ctrl();
@@ -590,6 +538,7 @@ void estimatorDDInit(void) {
 
 	mutex = xSemaphoreCreateMutex();
 	alpha_ = 0.0f;
+	alpha_new = 0.0f;
 	beta_ = 18.7291f;
 	// Initialize the DD Library
 	DataDriven_initialize();
@@ -624,18 +573,12 @@ bool estimatorDDNewMeasurement(const positionMeasurement_t *pos) {
 	   }
 	   counter++;
 	   */
-    if (Step == 1000){
-
-        DEBUG_PRINT("Times [ %.6f, %.6f]\n", 
-				(double)dt_ms, (double)timestamp_old);
-    }
 	timestamp_old = timestamp;
-    
+
 	state_z = pos->z;
-    
+
 	// Do something with the new measurement 
-    
-	DDEstimator_step_batch(state_z, t_s);
+	DDEstimator_step_circ(state_z, t_s);
 
 	//	if (msg_counter == 1000) {
 	//		DEBUG_PRINT("\n");
