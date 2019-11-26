@@ -129,7 +129,6 @@ static float TotalTime = 1.0f;
 static int Step = 4;
 static int StepLS = 0;
 static bool ctrl_dd_active = false;
-static bool start_control = false;
 static bool updated = false;
 
 // ====================================
@@ -248,12 +247,12 @@ static void estimate_params(float TotalTime,float TotalTime_1,float TotalTime_2,
     }
 	if (threshold > 0.25f && StepLS >= 5){
         StepLS = 0;
-		//DEBUG_PRINT("Input 11 [ %.3f, %.3f, %.6f, %.6f]\n", 
-		//		(double)alpha_2, (double)beta_2, (double)(TotalTime_1), (double)TotalTime_2);
+		DEBUG_PRINT("Input 11 [ %.3f, %.3f, %.6f, %.6f]\n", 
+				(double)alpha_2, (double)beta_2, (double)(TotalTime_1), (double)TotalTime_2);
 		alpha_new_1 = alpha_2 + 1.0f/TotalTime_2 * (diff_2)- (alpha_2 + ctrl_ddd_scaled * beta_2); 
 	    beta_new_1 = beta_2;
-        //DEBUG_PRINT("Input 12 [ %.3f, %.3f, %.6f, %.6f]\n", 
-		//	    (double)alpha_new_1, (double)beta_new_1, (double)ctrl_dd_scaled, (double)ctrl_ddd_scaled);
+        DEBUG_PRINT("Input 12 [ %.3f, %.3f, %.6f, %.6f]\n", 
+			    (double)alpha_new_1, (double)beta_new_1, (double)ctrl_dd_scaled, (double)ctrl_ddd_scaled);
 		alpha_new = alpha_new_1 + ctrl_ddd_scaled / ((ctrl_ddd_scaled - ctrl_dd_scaled))* (diff_1 / TotalTime_1  - (alpha_new_1 + ctrl_dd_scaled * beta_new_1)); 
 		beta_new = beta_new_1 + 1.0f / ((ctrl_dd_scaled - ctrl_ddd_scaled)) * (diff_1 / TotalTime_1 - (alpha_new_1 + ctrl_dd_scaled * beta_new_1));
         DEBUG_PRINT("Input 13 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);
@@ -273,9 +272,9 @@ static void estimate_params(float TotalTime,float TotalTime_1,float TotalTime_2,
         alpha_new = -2.0f;
     DEBUG_PRINT("Input 14 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);
 	}
-    if (beta_new > 25.0f){
-		beta_new = 25.0f;
-        alpha_new = -15.0f;
+    if (beta_new > 30.0f){
+		beta_new = 30.0f;
+        alpha_new = -20.0f;
     DEBUG_PRINT("Input 15 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);
 	}
 	Step++;
@@ -510,23 +509,11 @@ void DDEstimator_step_batch(float y, float stamp) {
 		// Estimate Parameters
 		float cdd = estimatorDD_getCtrl_dd_();
 		float cddd = estimatorDD_getCtrl_ddd_();
-        if ((X[1]<-1) && start_control == false){
-            start_control = true;
-            compute_ctrl();
-            set_estimator_ready();
-        }
-        else if ((X[1]>1) && start_control == false){
-            start_control = true;
-            compute_ctrl();
-            set_estimator_ready();
-        }
-        if (start_control == true){
-		    estimate_params(TotalTime, TotalTime_1, TotalTime_2, cdd, cddd);
+		estimate_params(TotalTime, TotalTime_1, TotalTime_2, cdd, cddd);
 
-		    if (ctrl_dd_active && Step > 1) {	
-			    compute_ctrl();
-		    }
-        }
+		if (ctrl_dd_active && Step > 1) {	
+			compute_ctrl();
+		}
 		set_estimator_ready();
 	}
 }
@@ -721,7 +708,6 @@ LOG_GROUP_STOP(estimator_dd)
 	   LOG_ADD(LOG_FLOAT, ud, &u_d)
 	   LOG_GROUP_STOP(controller_dd)
 	   */
-
 	PARAM_GROUP_START(controller_dd)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP1, &P1)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddP2, &P2)
@@ -731,6 +717,5 @@ LOG_GROUP_STOP(estimator_dd)
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddB, &beta_)   
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddTr, &Tracking[0])
 	PARAM_ADD(PARAM_FLOAT, ctrl_ddLd, &Land)
-    PARAM_ADD(PARAM_FLOAT, ctrl_0, &start_control)
 PARAM_GROUP_STOP(controller_dd)
 
