@@ -6,31 +6,28 @@
 
 // I should add a structure to clean the interface...
 
-void estimatorDDInit(void);
+void DDcontroller_Init(void);
 
-bool estimatorDDTest(void);
-
-// Not used...
-void estimatorDD(state_t* state, sensorData_t* sensors, control_t* control, const uint32_t tick);
+bool DDestimator_Check_Init(void);
 
 // Push the new sensor reading in the estimator
-bool estimatorDDNewMeasurement(const positionMeasurement_t *pos);
+bool DDcontroller_NewMeasurement(const positionMeasurement_t *pos);
 
 // Get the estimated value
-float estimatorDDGetEstimatedZ();
+float DDestimator_Get_StateEstimate();
 
 // Get the control computed by the DD
-float estimatorDDGetControl();
+float DDcontroller_Get_Control();
 
 // Feed the state into the estimator
-void estimatorDDFeedState(float z, float zd, uint64_t t);
+void DDestimator_Feed_State(float z, float zd, uint64_t t);
 
-void estimatorDDSetControl(const float v);
+void DDcontroller_Set_Control(const float v);
 
 // Check whether the estimator has a finished the estimation cycle
-bool estimatorDDHasNewEstimate();
+bool DDestimator_Check_NewMeasurement();
 
-// Start alpha and beta least squares
-void estimatorDDParamLeastSquares(void);
+// Start alpha and beta estimator
+void DDcontroller_Set_ControllerReady(void);
 
 #endif

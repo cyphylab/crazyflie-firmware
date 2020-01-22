@@ -177,7 +177,7 @@ void stabilizerInit(StateEstimatorType estimator)
 
 	sensorsInit();
 	stateEstimatorInit(estimator);
-	estimatorDDInit(); // Initialize the DataDriven Estimator
+	DDcontroller_Init(); // Initialize the DataDriven Estimator
 	controllerInit(ControllerTypeAny);
 	powerDistributionInit();
 	if (estimator == kalmanEstimator)
@@ -283,21 +283,21 @@ static void stabilizerTask(void* param)
 
 			// If DataDriven control is active then pick up the 
 			// control value
-			thrust_ctrl_dd = estimatorDDGetControl();
+			thrust_ctrl_dd = DDcontroller_Get_Control();
 			thrust_ctrl_pid = control.thrust;
 			if (ddc_active) {
 				//DEBUG_PRINT("DD Controller Active");
 				current_thrust = thrust_ctrl_dd;
                 if (!ddc_leastsquares) {
-                    estimatorDDParamLeastSquares();
+                    DDcontroller_Set_ControllerReady();
                     ddc_leastsquares = true;
                 }
                 
 			} else { 
 				// Update the control only if the estimation 
 				// ready 
-				if (estimatorDDHasNewEstimate()) {
-					estimatorDDSetControl(control.thrust);
+				if (DDestimator_Check_NewMeasurement()) {
+					DDcontroller_Set_Control(control.thrust);
 					current_thrust = thrust_ctrl_pid;	
 				}
 			}
