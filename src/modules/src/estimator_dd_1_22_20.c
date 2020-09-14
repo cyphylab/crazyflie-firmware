@@ -15,10 +15,7 @@
 
 #include "arm_math.h"
 
-#include "math.h"
-
 #define STATE_SIZE (3)
-#define BUFF_SIZE_U (3)
 #define BUFF_SIZE (5)
 #define TS (0.004f)
 #define TS2 ((TS) * (TS))
@@ -38,7 +35,6 @@ static void finalize_data_circ();
 static void finalize_data_batch();
 static void DDestimator_State();
 static void init_O();
-void init_UMatrix();
 static float DDestimator_AlphaBeta(float TotalTime, float ctrl_dd, float ctrl_ddd);
 static float compute_ctrl(float alpha, float beta);
 static void DDcontroller_ScaleSet_Control(float u);
@@ -53,8 +49,6 @@ float A[STATE_SIZE * STATE_SIZE] = {
 	0.0,	1.0, -(TS),
 	0.0, 	0.0,	1.0,
 };
-
-
 
 
 // On line i: [1, -sum(ts(k)), 1/2 * (sum(ts(k))^2]
@@ -111,56 +105,9 @@ void eval_pseudoinv(arm_matrix_instance_f32* Pseudo)
 {
 	arm_mat_trans_f32(&Om, &TempNxNym); // O'
 	arm_mat_mult_f32(&TempNxNym, &Om, &TempNxNxm); // (O' x O)
-	arm_mat_inverse_f32(&TempNxNxm, &TempNxNx2m); // (O' x O)^-1 = Pseudo inverse
-	arm_mat_mult_f32(&TempNxNx2m, &TempNxNym, Pseudo); // (O' x O)^-1 x O' 
+	arm_mat_inverse_f32(&TempNxNxm, &TempNxNx2m); // (O' x O)^-1 x O' = Pseudo inverse
+	arm_mat_mult_f32(&TempNxNx2m, &TempNxNym, Pseudo);
 }
-
-
-// U matrix
-float UMatrix[BUFF_SIZE_U * 2];
-float UmDet;
-// Pseudo inverse
-float UMatrix_inv[2 * BUFF_SIZE_U];
-
-
-//
-// Measurement Buffer
-static float Z[BUFF_SIZE_U];
-static float Params[2];
-
-// Temp Buffers for the evaluation of the pseudoinverse
-float UTempNyNx[BUFF_SIZE_U * 2];
-float UTempNxNy[2 * BUFF_SIZE_U];
-float UTempNxNx[2 * 2];
-float UTempNxNx2[2 * 2];
-
-
-// Filter Data
-arm_matrix_instance_f32 UMatrixm = {BUFF_SIZE_U, 2, UMatrix};
-arm_matrix_instance_f32 UMatrix_invm = {2, BUFF_SIZE_U, UMatrix_inv};
-
-arm_matrix_instance_f32 UTempNyNxm = {BUFF_SIZE_U, 2.0, UTempNyNx};
-arm_matrix_instance_f32 UTempNxNym = {2, BUFF_SIZE_U, UTempNxNy};
-arm_matrix_instance_f32 UTempNxNxm = {2, 2, UTempNxNx};
-arm_matrix_instance_f32 UTempNxNx2m = {2, 2, UTempNxNx2};
-
-arm_matrix_instance_f32 Zbuffm = {BUFF_SIZE_U, 1, Z};
-arm_matrix_instance_f32 Paramsm = {2, 1, Params};
-
-void eval_UmDet()
-{
-	arm_mat_trans_f32(&UMatrixm, &UTempNxNym); // O'
-	arm_mat_mult_f32(&UTempNxNym, &UMatrixm, &UTempNxNxm); // (O' x O)
-	UmDet = UTempNxNx[0] * UTempNxNx[3] - UTempNxNx[1] * UTempNxNx[2];
-	}
-void eval_Upseudoinv(arm_matrix_instance_f32* UPseudo)
-{
-	arm_mat_trans_f32(&UMatrixm, &UTempNxNym); // O'
-	arm_mat_mult_f32(&UTempNxNym, &UMatrixm, &UTempNxNxm); // (O' x O)
-	arm_mat_inverse_f32(&UTempNxNxm, &UTempNxNx2m); // (O' x O)^-1 = Pseudo inverse
-	arm_mat_mult_f32(&UTempNxNx2m, &UTempNxNym, UPseudo); // (O' x O)^-1 x O' 
-}
-
 
 
 // ====================================
@@ -184,13 +131,11 @@ static uint32_t msg_counter = 0;
 static float state_z;
 static float alpha_ = 0.0f;
 static float beta_ = 1.0f;
-static int Method = 1;
+static int Method = 0;
 
 // Estimator Parameters
 static float gamma1 = 0.0f;
 static float gamma2 = 0.0f;
-static float lower_bound_beta = 0.0f;
-static float upper_bound_beta = 0.0f;
 
 // Control gain
 static float P1 = 1.0f;
@@ -202,8 +147,6 @@ static float unscaled_ctrl_dd_;
 static float unscaled_ctrl_ddd_;
 static float Tracking[] = {1.0f, 0.0f};
 static float excitation_Threshold = 0.8f;
-static float controlInit[] = {1.0f,0.0f};
-static int controlInitCounter = 0;
 
 // Control Placeholder
 static float u = 0;
@@ -218,9 +161,9 @@ static int Step = 0;
 static bool ctrl_dd_active = false;
 static bool ctrl_dd_start = false;
 static bool updated = false;
-static float fakeBeta = 0;
-static float Factor = 3.0f;
-static int Wait = 0;
+static int WaitBetweenLearning = 0;
+static int SecondStep = 0;
+
 // =============================================
 // Getters and Setters
 
@@ -250,12 +193,8 @@ void DDcontroller_Set_Control(const float u)
 }
 
 void DDcontroller_Set_UnscaledControl(const float u)
-{	
-	for (int index = 0; index < (BUFF_SIZE_U-1); index++) {
-		UMatrix[2 * (BUFF_SIZE_U - index) - 1] = UMatrix[2* (BUFF_SIZE_U - index) - 3];
-	}
-	UMatrix[1] = u;
-	unscaled_ctrl_ddd_ = unscaled_ctrl_dd_;
+{
+	unscaled_ctrl_ddd_ = ctrl_dd_;
 	unscaled_ctrl_dd_ = u;
 }
 static float DDcontroller_Get_UnscaledControlOld()
@@ -346,19 +285,6 @@ void DDcontroller_Step(float y, float stamp)
 				DDcontroller_Set_ControllerStart();
 			}
 			DDestimator_Set_Ready();
-		} else {
-			if (ctrl_dd_start) {
-				DDcontroller_ScaleSet_Control(controlInit[controlInitCounter]);
-				if (controlInit[controlInitCounter]>0.5f){
-					controlInitCounter = 1;
-				} else {
-					controlInitCounter = 0;
-				}
-			} else if (!ctrl_dd_start && X[1]>1.0f) {
-				DDcontroller_Set_ControllerStart();
-			} else if (!ctrl_dd_start && X[1]<-1.0f) {
-				DDcontroller_Set_ControllerStart();
-			}
 		}
 
 	} else {
@@ -376,6 +302,8 @@ void DDcontroller_Step(float y, float stamp)
 
 				// Control
 				DDcontroller_ScaleSet_Control(u);
+
+
 			} else if (!ctrl_dd_start && X[1]>1.0f) {
 				DDcontroller_Set_ControllerStart();
 			} else if (!ctrl_dd_start && X[1]<-1.0f) {
@@ -383,19 +311,7 @@ void DDcontroller_Step(float y, float stamp)
 			}
 			DDestimator_Set_Ready();
 		} else {
-			if (ctrl_dd_start) {
-				Nmeas++;
-				DDcontroller_ScaleSet_Control(controlInit[controlInitCounter]);
-				if (controlInit[controlInitCounter]>0.5f){
-					controlInitCounter = 1;
-				} else {
-					controlInitCounter = 0;
-				}
-			} else if (!ctrl_dd_start && X[1]>1.0f) {
-				DDcontroller_Set_ControllerStart();
-			} else if (!ctrl_dd_start && X[1]<-1.0f) {
-				DDcontroller_Set_ControllerStart();
-			}
+			Nmeas++;
 		}
 	}
 }
@@ -415,14 +331,13 @@ void DDcontroller_Init(void)
 	Kdd[2] = 0.0f;
 
 	DEBUG_PRINT("DD Controller Gain: [%.3f, %.3f] \n", (double)Kdd[0], (double)Kdd[1]);
-	init_UMatrix();
 	init_O();
 
 	eval_pseudoinv(&O_invm);
 
 	mutex = xSemaphoreCreateMutex();
 	alpha_ = 0.0f;
-	beta_ = 0.0f; //18.7291f;
+	beta_ = 18.7291f;
 	// Initialize the DD Library
 	DataDriven_initialize();
 
@@ -453,23 +368,6 @@ static void insert_newmeas_circ(float y, float stamp)
 	}
 	Ybuff[0] = y;
 	Tbuff[0] = stamp;
-}
-
-void init_UMatrix()
-{
-	for (int index = 0; index < BUFF_SIZE_U; index++) {
-		UMatrix[2 * index] = 1.0;
-	}
-}
-
-void init_O()
-{
-	int i;
-	for (i = 0; i < BUFF_SIZE; i++) {
-		O[(i*STATE_SIZE) + 0] = 1;
-		O[(i*STATE_SIZE) + 1] = -(i * TS);
-		O[(i*STATE_SIZE) + 2] = 0.5f * (i * i * TS2);
-	}
 }
 
 static void update_O(float t[BUFF_SIZE])
@@ -506,7 +404,8 @@ static void finalize_data_batch()
 	for (int i = 0; i < BUFF_SIZE; i++) {
 		DTbuff[i] = Tbuff[0] - Tbuff[i];
 	}
-	TotalTime = DTbuff[BUFF_SIZE-1];
+	//TotalTime = DTbuff[BUFF_SIZE-1];
+	TotalTime = DTbuff[4];
 
 
 	// Update the Observability matrix
@@ -516,7 +415,15 @@ static void finalize_data_batch()
 	eval_pseudoinv(&O_invm);
 }
 
-
+void init_O()
+{
+	int i;
+	for (i = 0; i < BUFF_SIZE; i++) {
+		O[(i*STATE_SIZE) + 0] = 1;
+		O[(i*STATE_SIZE) + 1] = -(i * TS);
+		O[(i*STATE_SIZE) + 2] = 0.5f * (i * i * TS2);
+	}
+}
 
 /**
  * Estimate state
@@ -530,10 +437,6 @@ static void DDestimator_State()
 	}
 
 	arm_mat_mult_f32(&O_invm, &Ybuffm, &Xm);
-		for (int index = 0; index < (BUFF_SIZE_U-1); index++) {
-		Z[(BUFF_SIZE_U - index)-1] = Z[(BUFF_SIZE_U - index) - 2];
-	}
-	Z[0] = X[2];
 	return;
 }
 
@@ -552,47 +455,81 @@ static float DDestimator_AlphaBeta(float TotalTime, float ctrl_dd, float ctrl_dd
 	float alpha_new = 0.0f;
 	float beta_new = 0.0f;
 
-	eval_UmDet();
-	if (UmDet < 0.0f) {
-		UmDet = -UmDet;
-	}
-
+	float diff_1 = (X[1] - X_old[1]);
+	float udiff;
 	float u = 0.0f;
 
-	if ((UmDet <= excitation_Threshold) || (Step<BUFF_SIZE_U) || (Wait > 0)){
+	if(SecondStep) {
+		float GainObserverAlpha2 = - ctrl_ddd / (TotalTime * (ctrl_dd - ctrl_ddd));
+		float GainObserverBeta2 = 1.0f / (TotalTime * (ctrl_dd * ctrl_dd - ctrl_ddd * ctrl_dd));
 
-		alpha_new = alpha + gamma1 * sqrtf(TotalTime) * (X[2] -  (alpha + beta * ctrl_dd));
-		beta_new = beta + gamma2 * sqrtf(TotalTime) * ctrl_dd * (X[2] - (alpha + beta * ctrl_dd));
-	} else { 
-		eval_Upseudoinv(&UMatrix_invm);
-		arm_mat_mult_f32(&UMatrix_invm, &Zbuffm, &Paramsm);
-		//DEBUG_PRINT("Recompute0 [ %.6f, %.6f]\n", (double)alpha, (double)beta);
-		alpha_new = Params[0];
-		//alpha_new = alpha;
-		beta_new = Params[1];
-		DEBUG_PRINT("Recompute1 [ %.6f, %.6f]\n", (double)UmDet, (double)beta_new);
-		Wait = BUFF_SIZE_U;
-	}
-	
-		if (beta_new < lower_bound_beta) {
-			beta_new = lower_bound_beta;
-			/*DEBUG_PRINT("Input 14 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);*/
+		alpha_new = alpha + GainObserverAlpha2 * (diff_1 - TotalTime * (alpha + beta * ctrl_dd));
+		beta_new = beta + GainObserverBeta2 * ctrl_dd * (diff_1 - TotalTime * (alpha + beta * ctrl_dd));
+		DEBUG_PRINT("Recompute0 [ %.6f, %.6f]\n", (double)alpha_new, (double)beta_new);
+		if (beta_new < 3.0f) {
+			beta_new = 3.0f;
+			alpha_new = -2.0f;
+			DEBUG_PRINT("Recompute1 [ %.6f, %.6f]\n", (double)alpha_new, (double)beta_new);
+		} else if (beta_new > 25.0f) {
+			beta_new = 25.0f;
+			alpha_new = -15.0f;
+			DEBUG_PRINT("Recompute2 [ %.6f, %.6f]\n", (double)alpha_new, (double)beta_new);
+		} else {
+			DEBUG_PRINT("Recompute3 [ %.6f, %.6f]\n", (double)alpha_new, (double)beta_new);
 		}
+		WaitBetweenLearning = 0;
+		SecondStep = 0;
 
-		if (beta_new > upper_bound_beta) {
-			beta_new = upper_bound_beta;
-			/*DEBUG_PRINT("Input 15 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);*/
-		}
 		u = compute_ctrl(alpha_new, beta_new);
-	
 
+	} else {
+		float GainObserverBeta1 = 0.0f;
+		float GainObserverAlpha1 = - (TotalTime * GainObserverBeta1 * ctrl_dd * ctrl_dd - 1.0f) / TotalTime;
+
+
+		alpha_new = alpha + GainObserverAlpha1 * (diff_1 - TotalTime * (alpha + beta * ctrl_dd));
+		beta_new = beta + GainObserverBeta1 * ctrl_dd * (diff_1 - TotalTime * (alpha + beta * ctrl_dd));
+
+		u = compute_ctrl(alpha_new, beta_new);
+
+		udiff = u - ctrl_dd;
+
+		if (udiff < 0.0f) {
+			udiff = -udiff;
+		}
+
+		if (!(udiff >= excitation_Threshold && (WaitBetweenLearning >= 10 || Step < 4) && u != 0.0f)) {
+
+			alpha_new = alpha + gamma1 * (diff_1 - TotalTime * (alpha + beta * ctrl_dd));
+			beta_new = beta + gamma2 * ctrl_dd * (diff_1 - TotalTime * (alpha + beta * ctrl_dd));
+
+
+			if (beta_new < 3.0f) {
+				beta_new = 3.0f;
+				alpha_new = -2.0f;
+				/*DEBUG_PRINT("Input 14 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);*/
+			}
+
+			if (beta_new > 25.0f) {
+				beta_new = 25.0f;
+				alpha_new = -15.0f;
+				/*DEBUG_PRINT("Input 15 [ %.3f, %.3f]\n", (double)alpha_new, (double)beta_new);*/
+			}
+
+			WaitBetweenLearning ++;
+			u = compute_ctrl(alpha_new, beta_new);
+
+		} else {
+			SecondStep = 1;
+		}
+	}
 
 
 	Step++;
 	if (Step == 200) {
 		DEBUG_PRINT("Alpha Beta u [ %.3f, %.3f, %.3f]\n",
 		            (double)alpha_new, (double)beta_new,(double)u);
-		Step=BUFF_SIZE_U;
+		Step=4;
 	}
 
 // Update the parameters
@@ -640,11 +577,7 @@ static float compute_ctrl(float alpha, float beta)
 static void DDcontroller_ScaleSet_Control(float u)
 {
 	DDcontroller_Set_UnscaledControl(u);
-	/** The Following Line Changes U to fake a time varying Beta 
-	*/
-	
-	fakeBeta = (18.7291f-Factor*(X[0]*X[0]*X[0]*X[0]));
-	U = (fakeBeta/18.7291f) *(u * PWM_THRESHOLD);
+	U = u * PWM_THRESHOLD;
 	if (!Land) {
 		DDcontroller_Set_Control(U);
 	} else {
@@ -732,10 +665,10 @@ bool DDestimator_Check_Init(void)
 //
 LOG_GROUP_START(estimator_dd)
 LOG_ADD(LOG_FLOAT, est_x, &X[0])
-LOG_ADD(LOG_FLOAT, est_xd, &fakeBeta )
+LOG_ADD(LOG_FLOAT, est_xd, &X[1])
 LOG_ADD(LOG_FLOAT, est_alpha, &alpha_)
 LOG_ADD(LOG_FLOAT, est_beta, &beta_)
-LOG_ADD(LOG_FLOAT, sens_dt_ms, &X[1])
+LOG_ADD(LOG_FLOAT, sens_dt_ms, &dt_ms)
 LOG_GROUP_STOP(estimator_dd)
 
 PARAM_GROUP_START(controller_dd)
@@ -750,7 +683,4 @@ PARAM_ADD(PARAM_FLOAT, ctrl_ddLd, &Land)
 PARAM_ADD(PARAM_UINT8, ctrl_0, &ctrl_dd_start)
 PARAM_ADD(PARAM_FLOAT, ctrl_thr, &excitation_Threshold)
 PARAM_ADD(PARAM_FLOAT, ctrl_Mtd, &Method)
-PARAM_ADD(PARAM_FLOAT, ctrl_lbb, &lower_bound_beta)
-PARAM_ADD(PARAM_FLOAT, ctrl_ubb, &upper_bound_beta)
-PARAM_ADD(PARAM_FLOAT, ctrl_bfac, &Factor)
 PARAM_GROUP_STOP(controller_dd)
