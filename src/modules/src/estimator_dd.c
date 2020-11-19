@@ -306,7 +306,6 @@ bool DDcontroller_NewMeasurement(const positionMeasurement_t *pos)
 	state_z = pos->z;
 
 	// Data Driven Controller
-
 	DDcontroller_Step(state_z, timestamp);
 
 	return true;
@@ -321,7 +320,8 @@ void DDcontroller_Step(float y, float stamp)
 		DDcontroller_Init();
 	}
 
-
+	
+	
 	if (Method==0) {
 
 		insert_newmeas_batch(y, stamp, Nmeas);
@@ -364,6 +364,7 @@ void DDcontroller_Step(float y, float stamp)
 	} else {
 
 		insert_newmeas_circ(y, stamp);
+		Nmeas++;
 		if (Nmeas >= BUFF_SIZE) {
 			// State Estimation
 			finalize_data_circ();
