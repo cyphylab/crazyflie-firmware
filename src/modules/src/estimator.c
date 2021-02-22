@@ -6,7 +6,7 @@
 #include "estimator_complementary.h"
 #include "estimator_kalman.h"
 #include "estimator_kalmanUSC.h" 
-#include "estimator_dd.h"
+#include "lfd.h"
 
 #define DEFAULT_ESTIMATOR complementaryEstimator
 static StateEstimatorType currentEstimator = anyEstimator;
@@ -77,11 +77,11 @@ static EstimatorFcns estimatorFunctions[] = {
     .estimatorEnqueuePose = estimatorKalmanUSCEnqueuePose,
     },
   {
-	.init = DDcontroller_Init,
-	.test = DDestimator_Check_Init,
+	.init = LfDcontroller_Init,
+	.test = LfDestimator_Check_Init,
 	.update = NOT_IMPLEMENTED,
-	.name = "DD",
-    .estimatorEnqueuePosition = DDcontroller_NewMeasurement,
+	.name = "LfD",
+    .estimatorEnqueuePosition = LfDcontroller_NewMeasurement,
 	.estimatorEnqueueTDOA = NOT_IMPLEMENTED,
     .estimatorEnqueuePose = NOT_IMPLEMENTED,
     .estimatorEnqueueDistance = NOT_IMPLEMENTED,

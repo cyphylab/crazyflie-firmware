@@ -41,7 +41,7 @@
 #include "locodeck.h"
 
 #include "estimator.h"
-#include "estimator_dd.h"
+#include "lfd.h"
 #include "quatcompress.h"
 
 #define NBR_OF_RANGES_IN_PACKET   5
@@ -142,7 +142,7 @@ static void extPositionHandler(CRTPPacket* pk)
   ext_pos.stdDev = extPosStdDev;
   ext_pos.t = data->t; // Timestamp in second
   estimatorEnqueuePosition(&ext_pos);
-  DDcontroller_NewMeasurement(&ext_pos);
+  LfDcontroller_NewMeasurement(&ext_pos);
 }
 
 static void genericLocHandle(CRTPPacket* pk)

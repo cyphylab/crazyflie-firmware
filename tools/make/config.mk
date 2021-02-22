@@ -3,10 +3,10 @@
 ## Force device type string
 # CFLAGS += -DDEVICE_TYPE_STRING_FORCE="CF20"
 PROJ_OBJ += estimator_kalmanUSC.o ekf.o
-PROJ_OBJ += DataDriven.o DataDriven_data.o 
+PROJ_OBJ += lfd.o lfd_expertk.o 
 PROJ_OBJ += rt_nonfinite.o rtGetNaN.o rtGetInf.o
 
-PROJ_OBJ += estimator_dd.o
+##PROJ_OBJ += estimator_dd.o
 
 INCLUDES += -Isrc/modules/interface/R2016b/extern/include 
 INCLUDES += -Isrc/modules/interface/R2016b/simulink/include 

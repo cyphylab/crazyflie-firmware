@@ -50,6 +50,7 @@
 #include "usddeck.h"
 #include "quatcompress.h"
 
+#include "lfd.h"
 #include "estimator_dd.h"
 
 static bool isInit;
@@ -177,7 +178,7 @@ void stabilizerInit(StateEstimatorType estimator)
 
 	sensorsInit();
 	stateEstimatorInit(estimator);
-	DDcontroller_Init(); // Initialize the DataDriven Estimator
+	LfDcontroller_Init(); // Initialize the DataDriven Estimator
 	controllerInit(ControllerTypeAny);
 	powerDistributionInit();
 	if (estimator == kalmanEstimator)
@@ -270,9 +271,9 @@ static void stabilizerTask(void* param)
 			stateEstimator(&state, &sensorData, &control, tick);
 			compressState();
 
-			// Feed the state in the DD Controller
+			// Feed the state in the LfD Controller
 			//uint64_t feed_t = usecTimestamp();
-			//estimatorDDFeedState(state.position.z, state.velocity.z, feed_t);
+			//estimatorLfDFeedState(state.position.z, state.velocity.z, feed_t);
 
 			commanderGetSetpoint(&setpoint, &state);
 			compressSetpoint();
@@ -283,21 +284,22 @@ static void stabilizerTask(void* param)
 
 			// If DataDriven control is active then pick up the 
 			// control value
-			thrust_ctrl_dd = DDcontroller_Get_Control();
+			thrust_ctrl_dd = LfDcontroller_Get_Control();
 			thrust_ctrl_pid = control.thrust;
+
 			if (ddc_active) {
-				//DEBUG_PRINT("DD Controller Active");
+				//DEBUG_PRINT("LfD Controller Active");
 				current_thrust = thrust_ctrl_dd;
                 if (!ddc_leastsquares) {
-                    DDcontroller_Set_ControllerReady();
+                    LfDcontroller_Set_ControllerReady();
                     ddc_leastsquares = true;
                 }
                 
 			} else { 
 				// Update the control only if the estimation 
 				// ready 
-				if (DDestimator_Check_NewMeasurement()) {
-					DDcontroller_Set_Control(control.thrust);
+				if (LfDestimator_Check_NewMeasurement()) {
+					LfDcontroller_Set_Control(control.thrust);
 					current_thrust = thrust_ctrl_pid;	
 				}
 			}
